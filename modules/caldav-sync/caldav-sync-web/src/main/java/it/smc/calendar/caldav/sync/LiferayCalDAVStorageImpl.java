@@ -25,14 +25,21 @@ import com.liferay.calendar.service.CalendarBookingServiceUtil;
 import com.liferay.calendar.service.CalendarLocalServiceUtil;
 import com.liferay.calendar.service.CalendarResourceLocalServiceUtil;
 import com.liferay.calendar.service.CalendarServiceUtil;
+import com.liferay.calendar.util.CalendarResourceUtil;
 import com.liferay.petra.string.StringPool;
+import com.liferay.portal.kernel.dao.orm.RestrictionsFactoryUtil;
 import com.liferay.portal.kernel.exception.PortalException;
 import com.liferay.portal.kernel.log.Log;
 import com.liferay.portal.kernel.log.LogFactoryUtil;
+import com.liferay.portal.kernel.model.EmailAddress;
+import com.liferay.portal.kernel.model.Role;
+import com.liferay.portal.kernel.model.RoleConstants;
 import com.liferay.portal.kernel.model.User;
 import com.liferay.portal.kernel.security.auth.PrincipalException;
 import com.liferay.portal.kernel.security.permission.ActionKeys;
 import com.liferay.portal.kernel.security.permission.resource.ModelResourcePermission;
+import com.liferay.portal.kernel.service.EmailAddressLocalServiceUtil;
+import com.liferay.portal.kernel.service.RoleLocalServiceUtil;
 import com.liferay.portal.kernel.service.ServiceContext;
 import com.liferay.portal.kernel.service.ServiceContextFactory;
 import com.liferay.portal.kernel.service.UserLocalServiceUtil;
@@ -41,6 +48,7 @@ import com.liferay.portal.kernel.util.FileUtil;
 import com.liferay.portal.kernel.util.GetterUtil;
 import com.liferay.portal.kernel.util.PortalUtil;
 import com.liferay.portal.kernel.util.StringUtil;
+import com.liferay.portal.kernel.util.Validator;
 import com.liferay.portal.kernel.webdav.BaseWebDAVStorageImpl;
 import com.liferay.portal.kernel.webdav.Resource;
 import com.liferay.portal.kernel.webdav.WebDAVException;
@@ -51,11 +59,13 @@ import com.liferay.portal.kernel.webdav.methods.MethodFactoryRegistryUtil;
 import com.liferay.portal.kernel.workflow.WorkflowConstants;
 
 import it.smc.calendar.caldav.helper.api.CalendarHelperUtil;
+import it.smc.calendar.caldav.schedule.contact.service.ScheduleContactLocalServiceUtil;
 import it.smc.calendar.caldav.sync.listener.ICSContentImportExportFactoryUtil;
 import it.smc.calendar.caldav.sync.listener.ICSImportExportListener;
 import it.smc.calendar.caldav.sync.util.CalDAVHttpMethods;
 import it.smc.calendar.caldav.sync.util.CalDAVRequestThreadLocal;
 import it.smc.calendar.caldav.sync.util.CalDAVUtil;
+import it.smc.calendar.caldav.sync.util.ICalUtil;
 import it.smc.calendar.caldav.sync.util.ResourceNotFoundException;
 import it.smc.calendar.caldav.util.CalendarUtil;
 
@@ -63,6 +73,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.servlet.http.HttpServletResponse;
 
@@ -421,9 +433,39 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 		try {
 			String data = CalDAVRequestThreadLocal.getRequestContent();
 
+			List<String> emailAddresses = ICalUtil.getEmailAddresses(data);
+
 			Calendar calendar = (Calendar)getResource(
 				webDAVRequest
 			).getModel();
+
+			User user = UserLocalServiceUtil.getUser(calendar.getUserId());
+
+			String userEmailAddress = user.getEmailAddress();
+
+			if (emailAddresses.stream().noneMatch(userEmailAddress::equals)) {
+
+				if (_log.isWarnEnabled()) {
+					_log.warn("No user's email address found in request data");
+				}
+
+				return HttpServletResponse.SC_BAD_REQUEST;
+			}
+
+			String organizerEmailAddress =
+				ICalUtil.getOrganizerEmailAddress(data);
+
+			User organizerUser = UserLocalServiceUtil.fetchUserByEmailAddress(
+				calendar.getCompanyId(), organizerEmailAddress);
+
+			if (Validator.isNull(organizerUser)) {
+				ScheduleContactLocalServiceUtil.addScheduleContact(
+					calendar.getCompanyId(), null, organizerEmailAddress, null);
+
+				calendar =
+					ScheduleContactLocalServiceUtil.fetchDefaultCalendar(
+						calendar.getCompanyId(), organizerEmailAddress);
+			}
 
 			ICSImportExportListener icsContentListener =
 				ICSContentImportExportFactoryUtil.newInstance();

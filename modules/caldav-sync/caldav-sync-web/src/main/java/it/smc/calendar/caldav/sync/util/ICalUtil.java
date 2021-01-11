@@ -14,16 +14,28 @@
 
 package it.smc.calendar.caldav.sync.util;
 
+import com.liferay.petra.string.StringPool;
+import com.liferay.portal.kernel.io.unsync.UnsyncStringReader;
 import com.liferay.portal.kernel.util.ReleaseInfo;
 
+import com.liferay.portal.kernel.util.StringUtil;
+import net.fortuna.ical4j.data.CalendarBuilder;
 import net.fortuna.ical4j.model.Calendar;
+import net.fortuna.ical4j.model.Component;
+import net.fortuna.ical4j.model.Property;
 import net.fortuna.ical4j.model.PropertyList;
 import net.fortuna.ical4j.model.TimeZone;
 import net.fortuna.ical4j.model.TimeZoneRegistry;
 import net.fortuna.ical4j.model.TimeZoneRegistryFactory;
+import net.fortuna.ical4j.model.component.VEvent;
 import net.fortuna.ical4j.model.component.VTimeZone;
+import net.fortuna.ical4j.model.property.Attendee;
 import net.fortuna.ical4j.model.property.ProdId;
 import net.fortuna.ical4j.model.property.Version;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 /**
  * @author Fabio Pezzutto
@@ -57,4 +69,59 @@ public class ICalUtil {
 		return iCalCalendar;
 	}
 
+	public static List<String> getAttendeeEmailAddresses(String data)
+		throws Exception {
+
+		List<String> emailAddresses = new ArrayList<>();
+
+		CalendarBuilder calendarBuilder = new CalendarBuilder();
+
+		UnsyncStringReader ics = new UnsyncStringReader(data);
+
+		Calendar calendar = calendarBuilder.build(ics);
+
+		VEvent vEvent = (VEvent)calendar.getComponent(Component.VEVENT);
+
+		PropertyList attendees = vEvent.getProperties(Property.ATTENDEE);
+
+		for (Object attendee : attendees) {
+			emailAddresses.add(
+				_getEmailAddress(((Attendee)attendee).getValue()));
+		}
+
+		return emailAddresses;
+	}
+
+	public static List<String> getEmailAddresses(String data)
+		throws Exception {
+
+		List<String> emailAddresses = new ArrayList<>();
+
+		emailAddresses.add(getOrganizerEmailAddress(data));
+
+		emailAddresses.addAll(getAttendeeEmailAddresses(data));
+
+		return emailAddresses;
+	}
+
+	public static String getOrganizerEmailAddress(String data)
+		throws Exception {
+
+		CalendarBuilder calendarBuilder = new CalendarBuilder();
+
+		UnsyncStringReader ics = new UnsyncStringReader(data);
+
+		Calendar calendar = calendarBuilder.build(ics);
+
+		VEvent vEvent = (VEvent)calendar.getComponent(Component.VEVENT);
+
+		return _getEmailAddress(vEvent.getOrganizer().getValue());
+	}
+
+	private static String _getEmailAddress(String attendee) {
+		return StringUtil.replace(
+			attendee.toLowerCase(Locale.ROOT),
+			"mailto:", StringPool.BLANK);
+	}
+	
 }
