@@ -1,0 +1,27 @@
+dependencies {
+	compile project(":modules:caldav-sync:caldav-schedule-contact:caldav-schedule-contact-api")
+
+	compileOnly group: "com.liferay", name: "com.liferay.calendar.api"
+	compileOnly group: "com.liferay", name: "com.liferay.petra.io"
+	compileOnly group: "com.liferay", name: "com.liferay.petra.lang"
+	compileOnly group: "com.liferay", name: "com.liferay.petra.string"
+	compileOnly group: "com.liferay", name: "com.liferay.portal.aop.api"
+	compileOnly group: "com.liferay.portal", name: "com.liferay.portal.kernel"
+	compileOnly group: "org.osgi", name: "org.osgi.annotation.versioning"
+	compileOnly group: "org.osgi", name: "org.osgi.core"
+	compileOnly group: "org.osgi", name: "org.osgi.service.component.annotations"
+}
+
+buildService {
+	apiDir = "../caldav-schedule-contact-api/src/main/java"
+}
+
+group = "it.smc.calendar.caldav.schedule.contact"
+
+tasks.withType(JavaCompile) {
+
+	// Generated classes using Jodd library are unable to be read when compiled against JDK 11
+
+	sourceCompatibility = JavaVersion.VERSION_1_8
+	targetCompatibility = JavaVersion.VERSION_1_8
+}

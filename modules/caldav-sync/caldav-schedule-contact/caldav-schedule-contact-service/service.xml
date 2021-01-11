@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<!DOCTYPE service-builder PUBLIC "-//Liferay//DTD Service Builder 7.2.0//EN" "http://www.liferay.com/dtd/liferay-service-builder_7_2_0.dtd">
+
+<service-builder dependency-injector="ds" package-path="it.smc.calendar.caldav.schedule.contact">
+	<namespace>CalDAVSync</namespace>
+	<entity local-service="true" name="ScheduleContact" remote-service="false" uuid="true">
+
+		<!-- PK fields -->
+
+		<column name="scheduleContactId" primary="true" type="long" />
+
+		<!-- Group instance -->
+
+		<column name="groupId" type="long" />
+
+		<!-- Audit fields -->
+
+		<column name="companyId" type="long" />
+		<column name="userId" type="long" />
+		<column name="userName" type="String" />
+		<column name="createDate" type="Date" />
+		<column name="modifiedDate" type="Date" />
+
+		<!-- Other fields -->
+
+		<column name="commonName" type="String" />
+		<column name="emailAddress" type="String" />
+		
+		<!-- Order -->
+
+		<order by="asc">
+			<order-column name="commonName" />
+		</order>
+
+		<!-- Finder methods -->
+
+		<finder name="C_E" return-type="ScheduleContact" unique="true">
+			<finder-column name="companyId" />
+			<finder-column name="emailAddress" case-sensitive="false"/>
+		</finder>
+	</entity>
+</service-builder>

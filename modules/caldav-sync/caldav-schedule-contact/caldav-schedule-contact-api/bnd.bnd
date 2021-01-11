@@ -1,0 +1,10 @@
+Bundle-Name: caldav-schedule-contact-api
+Bundle-SymbolicName: it.smc.calendar.caldav.schedule.contact.api
+Bundle-Version: 1.0.0
+Export-Package:\
+	it.smc.calendar.caldav.schedule.contact.exception,\
+	it.smc.calendar.caldav.schedule.contact.model,\
+	it.smc.calendar.caldav.schedule.contact.service,\
+	it.smc.calendar.caldav.schedule.contact.service.persistence
+-check: EXPORTS
+-includeresource: META-INF/service.xml=../caldav-schedule-contact-service/service.xml
