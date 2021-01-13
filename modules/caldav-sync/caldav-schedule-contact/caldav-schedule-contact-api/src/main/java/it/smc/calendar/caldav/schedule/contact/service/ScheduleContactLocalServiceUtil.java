@@ -209,6 +209,12 @@ public class ScheduleContactLocalServiceUtil {
 		return getService().fetchScheduleContact(scheduleContactId);
 	}
 
+	public static it.smc.calendar.caldav.schedule.contact.model.ScheduleContact
+		fetchScheduleContact(long companyId, String emailAddress) {
+
+		return getService().fetchScheduleContact(companyId, emailAddress);
+	}
+
 	/**
 	 * Returns the schedule contact matching the UUID and group.
 	 *

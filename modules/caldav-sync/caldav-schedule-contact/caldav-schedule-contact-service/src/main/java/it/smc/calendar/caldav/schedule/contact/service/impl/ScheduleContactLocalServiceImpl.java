@@ -25,10 +25,13 @@ import com.liferay.portal.kernel.exception.EmailAddressException;
 import com.liferay.portal.kernel.exception.PortalException;
 import com.liferay.portal.kernel.language.LanguageUtil;
 import com.liferay.portal.kernel.model.Group;
+import com.liferay.portal.kernel.model.ResourceConstants;
 import com.liferay.portal.kernel.model.Role;
 import com.liferay.portal.kernel.model.RoleConstants;
 import com.liferay.portal.kernel.model.User;
+import com.liferay.portal.kernel.security.permission.ActionKeys;
 import com.liferay.portal.kernel.service.GroupLocalService;
+import com.liferay.portal.kernel.service.ResourcePermissionLocalService;
 import com.liferay.portal.kernel.service.RoleLocalService;
 import com.liferay.portal.kernel.service.ServiceContext;
 import com.liferay.portal.kernel.util.Validator;
@@ -80,76 +83,99 @@ public class ScheduleContactLocalServiceImpl
 			throw new EmailAddressException("Invalid email address: " + emailAddress);
 		}
 
-		try {
-			return findScheduleContact(companyId, emailAddress);
+		ScheduleContact scheduleContact = fetchScheduleContact(companyId, emailAddress);
+
+		if (Validator.isNotNull(scheduleContact)) {
+			return scheduleContact;
 		}
-		catch (PortalException pe) {
 
-			long scheduleContactId = counterLocalService.increment();
+		long scheduleContactId = counterLocalService.increment();
 
-			ScheduleContact scheduleContact =
-				scheduleContactPersistence.create(scheduleContactId);
+		scheduleContact =
+			scheduleContactPersistence.create(scheduleContactId);
 
-			if (Validator.isNull(serviceContext)) {
-				serviceContext = new ServiceContext();
-			}
+		if (Validator.isNull(serviceContext)) {
+			serviceContext = new ServiceContext();
+		}
 
-			long userId = serviceContext.getUserId();
+		long userId = serviceContext.getUserId();
 
-			if (Validator.isNull(userId)) {
-				Role role = roleLocalService.getRole(
-					companyId,
-					RoleConstants.ADMINISTRATOR);
+		if (Validator.isNull(userId)) {
+			Role role = roleLocalService.getRole(
+				companyId,
+				RoleConstants.ADMINISTRATOR);
 
-				userId = userLocalService.getRoleUserIds(role.getRoleId())[0];
-			}
+			userId = userLocalService.getRoleUserIds(role.getRoleId())[0];
+		}
 
-			Group group = null;
+		Group group = null;
 
-			if (Validator.isNull(serviceContext.getScopeGroupId())) {
-				group = groupLocalService.getCompanyGroup(companyId);
-			}
-			else {
-				group =
-					groupLocalService.getGroup(
-						serviceContext.getScopeGroupId());
-			}
+		if (Validator.isNull(serviceContext.getScopeGroupId())) {
+			group = groupLocalService.getCompanyGroup(companyId);
+		}
+		else {
+			group =
+				groupLocalService.getGroup(
+					serviceContext.getScopeGroupId());
+		}
 
-			if (Validator.isNull(commonName) || commonName.isEmpty()) {
-				commonName = emailAddress;
-			}
+		if (Validator.isNull(commonName) || commonName.isEmpty()) {
+			commonName = emailAddress;
+		}
 
-			User user = userLocalService.getUser(userId);
+		User user = userLocalService.getUser(userId);
 
-			scheduleContact.setCompanyId(companyId);
-			scheduleContact.setCommonName(commonName);
-			scheduleContact.setCreateDate(
-				serviceContext.getCreateDate(new Date()));
-			scheduleContact.setEmailAddress(emailAddress);
-			scheduleContact.setGroupId(group.getGroupId());
-			scheduleContact.setModifiedDate(
-				serviceContext.getModifiedDate(new Date()));
-			scheduleContact.setUserId(userId);
-			scheduleContact.setUserName(user.getFullName());
+		scheduleContact.setCompanyId(companyId);
+		scheduleContact.setCommonName(commonName);
+		scheduleContact.setCreateDate(
+			serviceContext.getCreateDate(new Date()));
+		scheduleContact.setEmailAddress(emailAddress);
+		scheduleContact.setGroupId(group.getGroupId());
+		scheduleContact.setModifiedDate(
+			serviceContext.getModifiedDate(new Date()));
+		scheduleContact.setUserId(userId);
+		scheduleContact.setUserName(user.getFullName());
 
-			scheduleContactPersistence.update(scheduleContact);
+		scheduleContactPersistence.update(scheduleContact);
 
-			long classNameId =
-				classNameLocalService.getClassNameId(ScheduleContact.class);
+		long classNameId =
+			classNameLocalService.getClassNameId(ScheduleContact.class);
 
-			Map<Locale, String> nameMap = new HashMap<>();
+		Map<Locale, String> nameMap = new HashMap<>();
 
-			for (Locale locale : LanguageUtil.getAvailableLocales()) {
-				nameMap.put(locale, commonName);
-			}
+		for (Locale locale : LanguageUtil.getAvailableLocales()) {
+			nameMap.put(locale, commonName);
+		}
 
+		CalendarResource calendarResource =
 			calendarResourceLocalService.addCalendarResource(
 				userId, group.getGroupId(), classNameId, scheduleContactId,
 				StringPool.BLANK, StringPool.BLANK, nameMap,
 				Collections.emptyMap(), true, serviceContext);
 
-			return scheduleContact;
-		}
+		Calendar defaultCalendar = calendarResource.getDefaultCalendar();
+
+		// Remove all permissions, granting only view to owner and user
+
+		Role ownerRole =
+			roleLocalService.getRole(companyId, RoleConstants.OWNER);
+
+		Role userRole =
+			roleLocalService.getRole(companyId, RoleConstants.USER);
+
+		HashMap<Long, String[]> roleIdsToActionIds =
+			new HashMap<Long, String[]>() {{
+				put(ownerRole.getRoleId(), new String[]{ActionKeys.VIEW});
+				put(userRole.getRoleId(), new String[]{ActionKeys.VIEW});
+			}};
+
+		resourcePermissionLocalService.setResourcePermissions(
+			companyId, Calendar.class.getName(),
+			ResourceConstants.SCOPE_INDIVIDUAL,
+			String.valueOf(defaultCalendar.getCalendarId()),
+			roleIdsToActionIds);
+
+		return scheduleContact;
 	}
 
 	@Override
@@ -166,11 +192,22 @@ public class ScheduleContactLocalServiceImpl
 				calendarResourceLocalService.fetchCalendarResource(
 					classNameId, scheduleContact.getScheduleContactId());
 
+			if (Validator.isNull(calendarResource)) {
+				return null;
+			}
+
 			return calendarResource.getDefaultCalendar();
 		}
 		catch (PortalException pe) {
 			return null;
 		}
+	}
+
+	@Override
+	public ScheduleContact fetchScheduleContact(
+		long companyId, String emailAddress){
+
+		return scheduleContactPersistence.fetchByC_E(companyId, emailAddress);
 	}
 
 	@Override
@@ -186,6 +223,9 @@ public class ScheduleContactLocalServiceImpl
 
 	@Reference(policyOption = ReferencePolicyOption.GREEDY)
 	protected GroupLocalService groupLocalService;
+
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	protected ResourcePermissionLocalService resourcePermissionLocalService;
 
 	@Reference(policyOption = ReferencePolicyOption.GREEDY)
 	protected RoleLocalService roleLocalService;

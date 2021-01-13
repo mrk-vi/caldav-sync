@@ -224,6 +224,14 @@ public class ScheduleContactLocalServiceWrapper
 			scheduleContactId);
 	}
 
+	@Override
+	public it.smc.calendar.caldav.schedule.contact.model.ScheduleContact
+		fetchScheduleContact(long companyId, String emailAddress) {
+
+		return _scheduleContactLocalService.fetchScheduleContact(
+			companyId, emailAddress);
+	}
+
 	/**
 	 * Returns the schedule contact matching the UUID and group.
 	 *

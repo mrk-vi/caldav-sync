@@ -14,36 +14,35 @@
 
 package it.smc.calendar.caldav.sync;
 
+import com.liferay.calendar.constants.CalendarActionKeys;
 import com.liferay.calendar.constants.CalendarPortletKeys;
 import com.liferay.calendar.exception.NoSuchCalendarException;
 import com.liferay.calendar.exporter.CalendarDataFormat;
 import com.liferay.calendar.model.Calendar;
 import com.liferay.calendar.model.CalendarBooking;
 import com.liferay.calendar.model.CalendarResource;
-import com.liferay.calendar.service.CalendarBookingLocalServiceUtil;
-import com.liferay.calendar.service.CalendarBookingServiceUtil;
-import com.liferay.calendar.service.CalendarLocalServiceUtil;
-import com.liferay.calendar.service.CalendarResourceLocalServiceUtil;
-import com.liferay.calendar.service.CalendarServiceUtil;
-import com.liferay.calendar.util.CalendarResourceUtil;
+import com.liferay.calendar.service.CalendarBookingLocalService;
+import com.liferay.calendar.service.CalendarBookingService;
+import com.liferay.calendar.service.CalendarLocalService;
+import com.liferay.calendar.service.CalendarResourceLocalService;
+import com.liferay.calendar.service.CalendarService;
 import com.liferay.petra.string.StringPool;
-import com.liferay.portal.kernel.dao.orm.RestrictionsFactoryUtil;
 import com.liferay.portal.kernel.exception.PortalException;
 import com.liferay.portal.kernel.log.Log;
 import com.liferay.portal.kernel.log.LogFactoryUtil;
-import com.liferay.portal.kernel.model.EmailAddress;
-import com.liferay.portal.kernel.model.Role;
-import com.liferay.portal.kernel.model.RoleConstants;
 import com.liferay.portal.kernel.model.User;
 import com.liferay.portal.kernel.security.auth.PrincipalException;
+import com.liferay.portal.kernel.security.auth.PrincipalThreadLocal;
 import com.liferay.portal.kernel.security.permission.ActionKeys;
+import com.liferay.portal.kernel.security.permission.PermissionChecker;
+import com.liferay.portal.kernel.security.permission.PermissionCheckerFactoryUtil;
+import com.liferay.portal.kernel.security.permission.PermissionThreadLocal;
 import com.liferay.portal.kernel.security.permission.resource.ModelResourcePermission;
-import com.liferay.portal.kernel.service.EmailAddressLocalServiceUtil;
-import com.liferay.portal.kernel.service.RoleLocalServiceUtil;
 import com.liferay.portal.kernel.service.ServiceContext;
 import com.liferay.portal.kernel.service.ServiceContextFactory;
-import com.liferay.portal.kernel.service.UserLocalServiceUtil;
-import com.liferay.portal.kernel.service.UserServiceUtil;
+import com.liferay.portal.kernel.service.ServiceContextThreadLocal;
+import com.liferay.portal.kernel.service.UserLocalService;
+import com.liferay.portal.kernel.service.UserService;
 import com.liferay.portal.kernel.util.FileUtil;
 import com.liferay.portal.kernel.util.GetterUtil;
 import com.liferay.portal.kernel.util.PortalUtil;
@@ -58,8 +57,8 @@ import com.liferay.portal.kernel.webdav.methods.MethodFactory;
 import com.liferay.portal.kernel.webdav.methods.MethodFactoryRegistryUtil;
 import com.liferay.portal.kernel.workflow.WorkflowConstants;
 
-import it.smc.calendar.caldav.helper.api.CalendarHelperUtil;
-import it.smc.calendar.caldav.schedule.contact.service.ScheduleContactLocalServiceUtil;
+import it.smc.calendar.caldav.helper.api.CalendarHelper;
+import it.smc.calendar.caldav.schedule.contact.service.ScheduleContactLocalService;
 import it.smc.calendar.caldav.sync.listener.ICSContentImportExportFactoryUtil;
 import it.smc.calendar.caldav.sync.listener.ICSImportExportListener;
 import it.smc.calendar.caldav.sync.util.CalDAVHttpMethods;
@@ -73,13 +72,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import javax.servlet.http.HttpServletResponse;
 
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.component.annotations.ReferencePolicyOption;
 
 /**
  * @author Fabio Pezzutto
@@ -106,17 +104,17 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 			).getModel();
 
 			long currentUserId = CalDAVUtil.getUserId(webDAVRequest);
-			User currentUser = UserLocalServiceUtil.fetchUser(currentUserId);
+			User currentUser = _userLocalService.fetchUser(currentUserId);
 
 			CalendarResource calendarResource =
 				calendarBooking.getCalendarResource();
 
 			if (!calendarBooking.isMasterBooking() &&
-				CalendarHelperUtil.isCalendarResourceUserCalendar(
+				_calendarHelper.isCalendarResourceUserCalendar(
 					calendarResource)) {
 
 				Optional<User> calendarResourceUser =
-					CalendarHelperUtil.getCalendarResourceUser(
+					_calendarHelper.getCalendarResourceUser(
 						calendarResource);
 
 				if (calendarResourceUser.isPresent() &&
@@ -127,7 +125,7 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 							CalendarBooking.class.getName(),
 							webDAVRequest.getHttpServletRequest());
 
-					CalendarBookingLocalServiceUtil.updateStatus(
+					_calendarBookingLocalService.updateStatus(
 						currentUserId, calendarBooking,
 						WorkflowConstants.STATUS_DENIED, serviceContext);
 
@@ -135,7 +133,7 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 				}
 			}
 
-			CalendarBookingServiceUtil.deleteCalendarBooking(
+			_calendarBookingService.deleteCalendarBooking(
 				calendarBooking.getCalendarBookingId());
 
 			return HttpServletResponse.SC_NO_CONTENT;
@@ -178,7 +176,7 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 				User user = null;
 
 				try {
-					user = UserServiceUtil.getUserById(userid);
+					user = _userService.getUserById(userid);
 				}
 				catch (Exception e) {
 					if (_log.isWarnEnabled()) {
@@ -201,12 +199,12 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 
 			if (calendarResourceId.length() < 16) {
 				calendarResource =
-					CalendarResourceLocalServiceUtil.getCalendarResource(
+					_calendarResourceLocalService.getCalendarResource(
 						GetterUtil.getLong(calendarResourceId));
 			}
 			else {
 				calendarResource =
-					CalendarResourceLocalServiceUtil.
+					_calendarResourceLocalService.
 						fetchCalendarResourceByUuidAndGroupId(
 							calendarResourceId, webDAVRequest.getGroupId());
 			}
@@ -238,12 +236,12 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 
 					if (calendarBookingId > 0) {
 						calendarBooking =
-							CalendarBookingServiceUtil.fetchCalendarBooking(
+							_calendarBookingService.fetchCalendarBooking(
 								calendarBookingId);
 					}
 					else {
 						calendarBooking =
-							CalendarBookingLocalServiceUtil.
+							_calendarBookingLocalService.
 								fetchCalendarBooking(
 									GetterUtil.getLong(pathArray[2]),
 									resourceShortName);
@@ -271,12 +269,12 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 				Calendar calendar = null;
 
 				if (calendarId.length() < 16) {
-					calendar = CalendarLocalServiceUtil.getCalendar(
+					calendar = _calendarLocalService.getCalendar(
 						GetterUtil.getLong(calendarId));
 				}
 				else {
 					calendar =
-						CalendarLocalServiceUtil.fetchCalendarByUuidAndGroupId(
+						_calendarLocalService.fetchCalendarByUuidAndGroupId(
 							calendarId, webDAVRequest.getGroupId());
 				}
 
@@ -315,7 +313,7 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 				User user = null;
 
 				try {
-					user = UserServiceUtil.getUserById(userid);
+					user = _userService.getUserById(userid);
 				}
 				catch (Exception e) {
 					if (_log.isWarnEnabled()) {
@@ -329,7 +327,7 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 				}
 
 				calendarResource =
-					CalendarResourceLocalServiceUtil.fetchCalendarResource(
+					_calendarResourceLocalService.fetchCalendarResource(
 						PortalUtil.getClassNameId(User.class),
 						user.getPrimaryKey());
 			}
@@ -338,12 +336,12 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 
 				if (calendarResourceId.length() < 16) {
 					calendarResource =
-						CalendarResourceLocalServiceUtil.getCalendarResource(
+						_calendarResourceLocalService.getCalendarResource(
 							GetterUtil.getLong(calendarResourceId));
 				}
 				else {
 					calendarResource =
-						CalendarResourceLocalServiceUtil.
+						_calendarResourceLocalService.
 							fetchCalendarResourceByUuidAndGroupId(
 								calendarResourceId, webDAVRequest.getGroupId());
 				}
@@ -383,15 +381,15 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 
 			long targetCalendarId = Long.parseLong(parts[6]);
 
-			Calendar targetCalendar = CalendarServiceUtil.fetchCalendar(
+			Calendar targetCalendar = _calendarService.fetchCalendar(
 				targetCalendarId);
 
 			CalendarBooking bookingCopy =
-				CalendarBookingLocalServiceUtil.fetchCalendarBooking(
+				_calendarBookingLocalService.fetchCalendarBooking(
 					targetCalendarId, calendarBooking.getVEventUid());
 
 			if (bookingCopy != null) {
-				CalendarBookingServiceUtil.deleteCalendarBooking(
+				_calendarBookingService.deleteCalendarBooking(
 					calendarBooking.getCalendarBookingId());
 			}
 			else {
@@ -404,7 +402,7 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 
 				calendarBooking.setCalendarId(targetCalendarId);
 
-				CalendarBookingLocalServiceUtil.updateCalendarBooking(
+				_calendarBookingLocalService.updateCalendarBooking(
 					calendarBooking);
 			}
 
@@ -439,7 +437,7 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 				webDAVRequest
 			).getModel();
 
-			User user = UserLocalServiceUtil.getUser(calendar.getUserId());
+			User user = _userLocalService.getUser(calendar.getUserId());
 
 			String userEmailAddress = user.getEmailAddress();
 
@@ -455,28 +453,59 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 			String organizerEmailAddress =
 				ICalUtil.getOrganizerEmailAddress(data);
 
-			User organizerUser = UserLocalServiceUtil.fetchUserByEmailAddress(
+			User organizerUser = _userLocalService.fetchUserByEmailAddress(
 				calendar.getCompanyId(), organizerEmailAddress);
 
+			Calendar targetCalendar = calendar;
+
 			if (Validator.isNull(organizerUser)) {
-				ScheduleContactLocalServiceUtil.addScheduleContact(
+				_scheduleContactLocalService.addScheduleContact(
 					calendar.getCompanyId(), null, organizerEmailAddress, null);
 
-				calendar =
-					ScheduleContactLocalServiceUtil.fetchDefaultCalendar(
+				targetCalendar =
+					_scheduleContactLocalService.fetchDefaultCalendar(
 						calendar.getCompanyId(), organizerEmailAddress);
 			}
 
-			ICSImportExportListener icsContentListener =
-				ICSContentImportExportFactoryUtil.newInstance();
+			_calendarModelResourcePermission.check(
+				webDAVRequest.getPermissionChecker(),
+				calendar.getCalendarId(),
+				CalendarActionKeys.MANAGE_BOOKINGS);
 
-			data = icsContentListener.beforeContentImported(data, calendar);
+			String currentPrincipal = PrincipalThreadLocal.getName();
 
-			CalendarServiceUtil.importCalendar(
-				calendar.getCalendarId(), data,
-				CalendarDataFormat.ICAL.getValue());
+			PermissionChecker currentPermissionChecker =
+				PermissionThreadLocal.getPermissionChecker();
 
-			icsContentListener.afterContentImported(data, calendar);
+			try {
+				long userId = targetCalendar.getUserId();
+
+				PrincipalThreadLocal.setName(userId);
+
+				PermissionChecker permissionChecker =
+					PermissionCheckerFactoryUtil.create(
+						_userLocalService.getUser(userId));
+
+				PermissionThreadLocal.setPermissionChecker(
+					permissionChecker);
+
+				ICSImportExportListener icsContentListener =
+					ICSContentImportExportFactoryUtil.newInstance();
+
+				data = icsContentListener.beforeContentImported(data, targetCalendar);
+
+				_calendarLocalService.importCalendar(
+					targetCalendar.getCalendarId(), data,
+					CalendarDataFormat.ICAL.getValue());
+
+				icsContentListener.afterContentImported(data, targetCalendar);
+			}
+			finally {
+				PrincipalThreadLocal.setName(currentPrincipal);
+
+				PermissionThreadLocal.setPermissionChecker(
+					currentPermissionChecker);
+			}
 
 			return HttpServletResponse.SC_CREATED;
 		}
@@ -601,9 +630,37 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 		return new UserResourceImpl(user, parentPath, locale);
 	}
 
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	protected CalendarLocalService _calendarLocalService;
+
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	protected CalendarService _calendarService;
+
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	protected CalendarBookingLocalService _calendarBookingLocalService;
+
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	protected CalendarBookingService _calendarBookingService;
+
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	protected CalendarResourceLocalService _calendarResourceLocalService;
+
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	protected CalendarHelper _calendarHelper;
+
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	protected UserLocalService _userLocalService;
+
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	protected UserService _userService;
+
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	protected ScheduleContactLocalService _scheduleContactLocalService;
+
 	private static Log _log = LogFactoryUtil.getLog(
 		LiferayCalDAVStorageImpl.class);
 
 	private ModelResourcePermission<Calendar> _calendarModelResourcePermission;
+
 
 }

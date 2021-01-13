@@ -188,6 +188,10 @@ public interface ScheduleContactLocalService
 	@Transactional(propagation = Propagation.SUPPORTS, readOnly = true)
 	public ScheduleContact fetchScheduleContact(long scheduleContactId);
 
+	@Transactional(propagation = Propagation.SUPPORTS, readOnly = true)
+	public ScheduleContact fetchScheduleContact(
+		long companyId, String emailAddress);
+
 	/**
 	 * Returns the schedule contact matching the UUID and group.
 	 *
