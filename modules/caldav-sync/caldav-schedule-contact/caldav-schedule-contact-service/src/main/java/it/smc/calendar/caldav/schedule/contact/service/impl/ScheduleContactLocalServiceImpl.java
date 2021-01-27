@@ -80,10 +80,12 @@ public class ScheduleContactLocalServiceImpl
 		throws PortalException {
 
 		if (!Validator.isEmailAddress(emailAddress)) {
-			throw new EmailAddressException("Invalid email address: " + emailAddress);
+			throw new EmailAddressException(
+				"Invalid email address: " + emailAddress);
 		}
 
-		ScheduleContact scheduleContact = fetchScheduleContact(companyId, emailAddress);
+		ScheduleContact scheduleContact =
+			fetchScheduleContact(companyId, emailAddress);
 
 		if (Validator.isNotNull(scheduleContact)) {
 			return scheduleContact;
@@ -138,43 +140,6 @@ public class ScheduleContactLocalServiceImpl
 
 		scheduleContactPersistence.update(scheduleContact);
 
-		long classNameId =
-			classNameLocalService.getClassNameId(ScheduleContact.class);
-
-		Map<Locale, String> nameMap = new HashMap<>();
-
-		for (Locale locale : LanguageUtil.getAvailableLocales()) {
-			nameMap.put(locale, commonName);
-		}
-
-		CalendarResource calendarResource =
-			calendarResourceLocalService.addCalendarResource(
-				userId, group.getGroupId(), classNameId, scheduleContactId,
-				StringPool.BLANK, StringPool.BLANK, nameMap,
-				Collections.emptyMap(), true, serviceContext);
-
-		Calendar defaultCalendar = calendarResource.getDefaultCalendar();
-
-		// Remove all permissions, granting only view to owner and user
-
-		Role ownerRole =
-			roleLocalService.getRole(companyId, RoleConstants.OWNER);
-
-		Role userRole =
-			roleLocalService.getRole(companyId, RoleConstants.USER);
-
-		HashMap<Long, String[]> roleIdsToActionIds =
-			new HashMap<Long, String[]>() {{
-				put(ownerRole.getRoleId(), new String[]{ActionKeys.VIEW});
-				put(userRole.getRoleId(), new String[]{ActionKeys.VIEW});
-			}};
-
-		resourcePermissionLocalService.setResourcePermissions(
-			companyId, Calendar.class.getName(),
-			ResourceConstants.SCOPE_INDIVIDUAL,
-			String.valueOf(defaultCalendar.getCalendarId()),
-			roleIdsToActionIds);
-
 		return scheduleContact;
 	}
 
@@ -185,18 +150,7 @@ public class ScheduleContactLocalServiceImpl
 			ScheduleContact scheduleContact =
 				findScheduleContact(companyId, emailAddress);
 
-			long classNameId =
-				classNameLocalService.getClassNameId(ScheduleContact.class);
-
-			CalendarResource calendarResource =
-				calendarResourceLocalService.fetchCalendarResource(
-					classNameId, scheduleContact.getScheduleContactId());
-
-			if (Validator.isNull(calendarResource)) {
-				return null;
-			}
-
-			return calendarResource.getDefaultCalendar();
+			return _getCalendar(scheduleContact);
 		}
 		catch (PortalException pe) {
 			return null;
@@ -216,6 +170,96 @@ public class ScheduleContactLocalServiceImpl
 		throws PortalException {
 
 		return scheduleContactPersistence.findByC_E(companyId, emailAddress);
+	}
+
+	@Override
+	public Calendar getDefaultCalendar(
+			long companyId, String commonName, String emailAddress,
+			ServiceContext serviceContext)
+		throws PortalException {
+
+		Calendar calendar = fetchDefaultCalendar(companyId, emailAddress);
+
+		if (Validator.isNotNull(calendar)) {
+			return calendar;
+		}
+
+		ScheduleContact scheduleContact =
+			addScheduleContact(companyId, commonName, emailAddress,
+				serviceContext);
+
+		return _getCalendar(scheduleContact, serviceContext);
+	}
+
+
+	private Calendar _getCalendar(ScheduleContact scheduleContact) {
+		long classNameId =
+			classNameLocalService.getClassNameId(ScheduleContact.class);
+
+		CalendarResource calendarResource =
+			calendarResourceLocalService.fetchCalendarResource(
+				classNameId, scheduleContact.getScheduleContactId());
+
+		if (Validator.isNull(calendarResource)) {
+			return null;
+		}
+
+		return calendarResource.getDefaultCalendar();
+	}
+
+	private Calendar _getCalendar(
+			ScheduleContact scheduleContact, ServiceContext serviceContext)
+		throws PortalException {
+
+		if (Validator.isNull(serviceContext)) {
+			serviceContext = new ServiceContext();
+		}
+
+		long classNameId =
+		classNameLocalService.getClassNameId(ScheduleContact.class);
+
+		CalendarResource calendarResource =
+			calendarResourceLocalService.fetchCalendarResource(
+				classNameId, scheduleContact.getScheduleContactId());
+
+		if (Validator.isNotNull(calendarResource)) {
+			return calendarResource.getDefaultCalendar();
+		}
+
+		Map<Locale, String> nameMap = new HashMap<>();
+
+		for (Locale locale : LanguageUtil.getAvailableLocales()) {
+			nameMap.put(locale, scheduleContact.getCommonName());
+		}
+
+		calendarResource =
+			calendarResourceLocalService.addCalendarResource(
+				scheduleContact.getUserId(), scheduleContact.getGroupId(),
+				classNameId, scheduleContact.getScheduleContactId(),
+				StringPool.BLANK, StringPool.BLANK, nameMap,
+				Collections.emptyMap(), true, serviceContext);
+
+		// Remove all permissions, granting only view to owner and user
+
+//		Role ownerRole =
+//			roleLocalService.getRole(companyId, RoleConstants.OWNER);
+//
+//		Role userRole =
+//			roleLocalService.getRole(companyId, RoleConstants.USER);
+//
+//		HashMap<Long, String[]> roleIdsToActionIds =
+//			new HashMap<Long, String[]>() {{
+//				put(ownerRole.getRoleId(), new String[]{ActionKeys.VIEW});
+//				put(userRole.getRoleId(), new String[]{ActionKeys.VIEW});
+//			}};
+//
+//		resourcePermissionLocalService.setResourcePermissions(
+//			companyId, Calendar.class.getName(),
+//			ResourceConstants.SCOPE_INDIVIDUAL,
+//			String.valueOf(defaultCalendar.getCalendarId()),
+//			roleIdsToActionIds);
+
+		return calendarResource.getDefaultCalendar();
 	}
 
 	@Reference(policyOption = ReferencePolicyOption.GREEDY)

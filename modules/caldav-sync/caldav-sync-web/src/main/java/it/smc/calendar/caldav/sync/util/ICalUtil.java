@@ -19,7 +19,9 @@ import com.liferay.portal.kernel.io.unsync.UnsyncStringReader;
 import com.liferay.portal.kernel.util.ReleaseInfo;
 
 import com.liferay.portal.kernel.util.StringUtil;
+import com.liferay.portal.kernel.util.Validator;
 import net.fortuna.ical4j.data.CalendarBuilder;
+import net.fortuna.ical4j.data.ParserException;
 import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.model.Component;
 import net.fortuna.ical4j.model.Property;
@@ -30,9 +32,11 @@ import net.fortuna.ical4j.model.TimeZoneRegistryFactory;
 import net.fortuna.ical4j.model.component.VEvent;
 import net.fortuna.ical4j.model.component.VTimeZone;
 import net.fortuna.ical4j.model.property.Attendee;
+import net.fortuna.ical4j.model.property.Organizer;
 import net.fortuna.ical4j.model.property.ProdId;
 import net.fortuna.ical4j.model.property.Version;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -41,6 +45,36 @@ import java.util.Locale;
  * @author Fabio Pezzutto
  */
 public class ICalUtil {
+
+	public static Attendee fetchAttendee(String data, String email)
+		throws Exception {
+
+		PropertyList attendees = _getAttendees(data);
+
+		for (Object attendeeO : attendees) {
+			Attendee attendee = (Attendee) attendeeO;
+			String attendeeEmail =
+				attendee.getCalAddress().getSchemeSpecificPart();
+			if (attendeeEmail.equals(email)) {
+				return attendee;
+			}
+		}
+
+		return null;
+	}
+	public static String getVEventUid(String data) throws Exception {
+		List<String> emailAddresses = new ArrayList<>();
+
+		CalendarBuilder calendarBuilder = new CalendarBuilder();
+
+		UnsyncStringReader ics = new UnsyncStringReader(data);
+
+		Calendar calendar = calendarBuilder.build(ics);
+
+		VEvent vEvent = (VEvent)calendar.getComponent(Component.VEVENT);
+
+		return vEvent.getUid().getValue();
+	}
 
 	public static Calendar getVTimeZoneCalendar() {
 		TimeZoneRegistry registry = TimeZoneRegistryFactory.getInstance(
@@ -74,15 +108,7 @@ public class ICalUtil {
 
 		List<String> emailAddresses = new ArrayList<>();
 
-		CalendarBuilder calendarBuilder = new CalendarBuilder();
-
-		UnsyncStringReader ics = new UnsyncStringReader(data);
-
-		Calendar calendar = calendarBuilder.build(ics);
-
-		VEvent vEvent = (VEvent)calendar.getComponent(Component.VEVENT);
-
-		PropertyList attendees = vEvent.getProperties(Property.ATTENDEE);
+		PropertyList attendees = _getAttendees(data);
 
 		for (Object attendee : attendees) {
 			emailAddresses.add(
@@ -104,9 +130,7 @@ public class ICalUtil {
 		return emailAddresses;
 	}
 
-	public static String getOrganizerEmailAddress(String data)
-		throws Exception {
-
+	public static Organizer getOrganizer(String data) throws Exception {
 		CalendarBuilder calendarBuilder = new CalendarBuilder();
 
 		UnsyncStringReader ics = new UnsyncStringReader(data);
@@ -115,7 +139,36 @@ public class ICalUtil {
 
 		VEvent vEvent = (VEvent)calendar.getComponent(Component.VEVENT);
 
-		return _getEmailAddress(vEvent.getOrganizer().getValue());
+		if (Validator.isNull(vEvent)) {
+			return null;
+		}
+
+		return vEvent.getOrganizer();
+	}
+
+	public static String getOrganizerEmailAddress(String data)
+		throws Exception {
+
+		Organizer organizer = getOrganizer(data);
+
+		if (Validator.isNull(organizer)) {
+			return null;
+		}
+
+		return _getEmailAddress(organizer.getValue());
+	}
+
+	private static PropertyList _getAttendees(String data)
+		throws IOException, ParserException {
+		CalendarBuilder calendarBuilder = new CalendarBuilder();
+
+		UnsyncStringReader ics = new UnsyncStringReader(data);
+
+		Calendar calendar = calendarBuilder.build(ics);
+
+		VEvent vEvent = (VEvent)calendar.getComponent(Component.VEVENT);
+
+		return vEvent.getProperties(Property.ATTENDEE);
 	}
 
 	private static String _getEmailAddress(String attendee) {

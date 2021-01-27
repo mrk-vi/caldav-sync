@@ -264,6 +264,16 @@ public class ScheduleContactLocalServiceWrapper
 	}
 
 	@Override
+	public com.liferay.calendar.model.Calendar getDefaultCalendar(
+			long companyId, String commonName, String emailAddress,
+			com.liferay.portal.kernel.service.ServiceContext serviceContext)
+		throws com.liferay.portal.kernel.exception.PortalException {
+
+		return _scheduleContactLocalService.getDefaultCalendar(
+			companyId, commonName, emailAddress, serviceContext);
+	}
+
+	@Override
 	public com.liferay.portal.kernel.dao.orm.ExportActionableDynamicQuery
 		getExportActionableDynamicQuery(
 			com.liferay.exportimport.kernel.lar.PortletDataContext

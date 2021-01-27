@@ -241,6 +241,15 @@ public class ScheduleContactLocalServiceUtil {
 		return getService().getActionableDynamicQuery();
 	}
 
+	public static com.liferay.calendar.model.Calendar getDefaultCalendar(
+			long companyId, String commonName, String emailAddress,
+			com.liferay.portal.kernel.service.ServiceContext serviceContext)
+		throws com.liferay.portal.kernel.exception.PortalException {
+
+		return getService().getDefaultCalendar(
+			companyId, commonName, emailAddress, serviceContext);
+	}
+
 	public static com.liferay.portal.kernel.dao.orm.ExportActionableDynamicQuery
 		getExportActionableDynamicQuery(
 			com.liferay.exportimport.kernel.lar.PortletDataContext

@@ -211,6 +211,12 @@ public interface ScheduleContactLocalService
 	public ActionableDynamicQuery getActionableDynamicQuery();
 
 	@Transactional(propagation = Propagation.SUPPORTS, readOnly = true)
+	public Calendar getDefaultCalendar(
+			long companyId, String commonName, String emailAddress,
+			ServiceContext serviceContext)
+		throws PortalException;
+
+	@Transactional(propagation = Propagation.SUPPORTS, readOnly = true)
 	public ExportActionableDynamicQuery getExportActionableDynamicQuery(
 		PortletDataContext portletDataContext);
 

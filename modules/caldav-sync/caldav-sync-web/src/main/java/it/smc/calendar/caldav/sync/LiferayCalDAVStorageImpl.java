@@ -59,6 +59,7 @@ import com.liferay.portal.kernel.workflow.WorkflowConstants;
 
 import it.smc.calendar.caldav.helper.api.CalendarHelper;
 import it.smc.calendar.caldav.schedule.contact.service.ScheduleContactLocalService;
+import it.smc.calendar.caldav.sync.ical.util.AttendeeUtil;
 import it.smc.calendar.caldav.sync.listener.ICSContentImportExportFactoryUtil;
 import it.smc.calendar.caldav.sync.listener.ICSImportExportListener;
 import it.smc.calendar.caldav.sync.util.CalDAVHttpMethods;
@@ -75,6 +76,9 @@ import java.util.Optional;
 
 import javax.servlet.http.HttpServletResponse;
 
+import net.fortuna.ical4j.model.Parameter;
+import net.fortuna.ical4j.model.property.Attendee;
+import net.fortuna.ical4j.model.property.Organizer;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Reference;
 import org.osgi.service.component.annotations.ReferencePolicyOption;
@@ -431,40 +435,53 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 		try {
 			String data = CalDAVRequestThreadLocal.getRequestContent();
 
-			List<String> emailAddresses = ICalUtil.getEmailAddresses(data);
-
 			Calendar calendar = (Calendar)getResource(
 				webDAVRequest
 			).getModel();
 
-			User user = _userLocalService.getUser(calendar.getUserId());
-
-			String userEmailAddress = user.getEmailAddress();
-
-			if (emailAddresses.stream().noneMatch(userEmailAddress::equals)) {
-
-				if (_log.isWarnEnabled()) {
-					_log.warn("No user's email address found in request data");
-				}
-
-				return HttpServletResponse.SC_BAD_REQUEST;
-			}
-
-			String organizerEmailAddress =
-				ICalUtil.getOrganizerEmailAddress(data);
-
-			User organizerUser = _userLocalService.fetchUserByEmailAddress(
-				calendar.getCompanyId(), organizerEmailAddress);
-
 			Calendar targetCalendar = calendar;
 
-			if (Validator.isNull(organizerUser)) {
-				_scheduleContactLocalService.addScheduleContact(
-					calendar.getCompanyId(), null, organizerEmailAddress, null);
+			Organizer organizer = ICalUtil.getOrganizer(data);
 
-				targetCalendar =
-					_scheduleContactLocalService.fetchDefaultCalendar(
-						calendar.getCompanyId(), organizerEmailAddress);
+			User calendarUser =
+				_userLocalService.getUser(calendar.getUserId());
+
+			String userEmailAddress = calendarUser.getEmailAddress();
+
+			if (Validator.isNotNull(organizer)) {
+				String organizerEmailAddress =
+					organizer.getCalAddress().getSchemeSpecificPart();
+
+				User organizerUser = _userLocalService.fetchUserByEmailAddress(
+					calendar.getCompanyId(), organizerEmailAddress);
+
+				if (Validator.isNull(organizerUser)) {
+					List<String> attendeeEmailAddresses =
+						ICalUtil.getAttendeeEmailAddresses(data);
+
+					if (!attendeeEmailAddresses.contains(userEmailAddress)) {
+						if (_log.isWarnEnabled()) {
+							_log.warn(
+								"No user email address found in request data");
+						}
+
+						return HttpServletResponse.SC_BAD_REQUEST;
+					}
+
+					Parameter commonNameParam =
+						organizer.getParameter(Parameter.CN);
+
+					String commonName = organizerEmailAddress;
+
+					if (Validator.isNotNull(commonNameParam)) {
+						commonName = commonNameParam.getValue();
+					}
+
+					targetCalendar =
+						_scheduleContactLocalService.getDefaultCalendar(
+							calendar.getCompanyId(), commonName,
+							organizerEmailAddress, new ServiceContext());
+				}
 			}
 
 			_calendarModelResourcePermission.check(
@@ -492,7 +509,8 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 				ICSImportExportListener icsContentListener =
 					ICSContentImportExportFactoryUtil.newInstance();
 
-				data = icsContentListener.beforeContentImported(data, targetCalendar);
+				data = icsContentListener.beforeContentImported(
+					data, targetCalendar);
 
 				_calendarLocalService.importCalendar(
 					targetCalendar.getCalendarId(), data,
@@ -505,6 +523,25 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 
 				PermissionThreadLocal.setPermissionChecker(
 					currentPermissionChecker);
+			}
+
+			String vEventUid = ICalUtil.getVEventUid(data);
+
+			Attendee attendee = ICalUtil.fetchAttendee(data, userEmailAddress);
+
+			CalendarBooking calendarBooking =
+				_calendarBookingLocalService.fetchCalendarBooking(
+					calendar.getCalendarId(), vEventUid);
+
+			if (Validator.isNotNull(attendee) &&
+				Validator.isNotNull(calendarBooking)) {
+
+				int status = AttendeeUtil.getStatus(attendee,
+					calendarBooking.getStatus());
+
+				_calendarBookingLocalService.updateStatus(
+					calendarUser.getUserId(), calendarBooking, status,
+					new ServiceContext());
 			}
 
 			return HttpServletResponse.SC_CREATED;
