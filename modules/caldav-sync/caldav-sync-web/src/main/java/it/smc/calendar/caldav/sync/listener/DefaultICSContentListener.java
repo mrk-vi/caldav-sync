@@ -17,6 +17,7 @@ package it.smc.calendar.caldav.sync.listener;
 import com.liferay.calendar.constants.CalendarActionKeys;
 import com.liferay.calendar.model.Calendar;
 import com.liferay.calendar.model.CalendarBooking;
+import com.liferay.calendar.model.CalendarBookingConstants;
 import com.liferay.calendar.model.CalendarResource;
 import com.liferay.calendar.service.CalendarBookingLocalService;
 import com.liferay.calendar.util.JCalendarUtil;
@@ -45,6 +46,7 @@ import com.liferay.portal.kernel.service.ServiceContextThreadLocal;
 import com.liferay.portal.kernel.service.UserLocalService;
 import com.liferay.portal.kernel.util.ArrayUtil;
 import com.liferay.portal.kernel.util.GetterUtil;
+import com.liferay.portal.kernel.util.PortalUtil;
 import com.liferay.portal.kernel.util.StringUtil;
 import com.liferay.portal.kernel.util.UnicodeProperties;
 import com.liferay.portal.kernel.util.Validator;
@@ -52,6 +54,8 @@ import com.liferay.portal.kernel.workflow.WorkflowConstants;
 
 import it.smc.calendar.caldav.helper.api.CalendarHelperUtil;
 import it.smc.calendar.caldav.helper.util.PropsValues;
+import it.smc.calendar.caldav.schedule.contact.model.ScheduleContact;
+import it.smc.calendar.caldav.schedule.contact.service.ScheduleContactLocalService;
 import it.smc.calendar.caldav.sync.ical.util.AttendeeUtil;
 import it.smc.calendar.caldav.sync.util.CalDAVUtil;
 
@@ -59,6 +63,7 @@ import java.io.IOException;
 
 import java.net.URI;
 
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -82,6 +87,7 @@ import net.fortuna.ical4j.model.PropertyList;
 import net.fortuna.ical4j.model.component.VAlarm;
 import net.fortuna.ical4j.model.component.VEvent;
 import net.fortuna.ical4j.model.parameter.Cn;
+import net.fortuna.ical4j.model.parameter.CuType;
 import net.fortuna.ical4j.model.parameter.PartStat;
 import net.fortuna.ical4j.model.parameter.Rsvp;
 import net.fortuna.ical4j.model.parameter.Value;
@@ -510,8 +516,6 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 		PropertyList attendeeList = vEvent.getProperties(Property.ATTENDEE);
 
 		Iterator iterator = attendeeList.iterator();
-		String[] attendees = new String[0];
-		String[] attendeesEmailAddresses = new String[0];
 
 		while (iterator.hasNext()) {
 			Attendee attendee = (Attendee)iterator.next();
@@ -536,10 +540,51 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 					calendarBooking.getCalendarResource());
 
 			if (user == null) {
-				attendees = ArrayUtil.append(attendees, attendee.toString());
+				Parameter cnParameter = attendee.getParameter(Parameter.CN);
 
-				attendeesEmailAddresses = ArrayUtil.append(
-					attendeesEmailAddresses, attendeeEmail);
+				String commonName = attendeeEmail;
+
+				if (Validator.isNotNull(cnParameter)) {
+					commonName = cnParameter.getValue();
+				}
+
+				Calendar externalCalendar =
+					_scheduleContactLocalService.getDefaultCalendar(
+						calendarBooking.getCompanyId(), commonName,
+						attendeeEmail, new ServiceContext());
+
+				CalendarBooking externalBooking =
+					_calendarBookingLocalService.fetchCalendarBooking(
+						externalCalendar.getCalendarId(),
+						vEvent.getUid().getValue());
+
+				if (Validator.isNull(externalBooking)) {
+					externalBooking =
+						_calendarBookingLocalService.addCalendarBooking(
+							externalCalendar.getUserId(),
+							externalCalendar.getCalendarId(), new long[]{},
+							calendarBooking.getParentCalendarBookingId(),
+							CalendarBookingConstants.RECURRING_CALENDAR_BOOKING_ID_DEFAULT,
+							calendarBooking.getTitleMap(),
+							calendarBooking.getDescriptionMap(),
+							calendarBooking.getLocation(),
+							calendarBooking.getStartTime(),
+							calendarBooking.getEndTime(),
+							calendarBooking.getAllDay(),
+							calendarBooking.getRecurrence(),
+							calendarBooking.getFirstReminder(),
+							calendarBooking.getFirstReminderType(),
+							calendarBooking.getSecondReminder(),
+							calendarBooking.getSecondReminderType(),
+							new ServiceContext());
+				}
+
+				_calendarBookingLocalService.updateStatus(
+					externalBooking.getUserId(),
+					externalBooking.getCalendarBookingId(),
+					AttendeeUtil.getStatus(
+						attendee, WorkflowConstants.STATUS_PENDING),
+					new ServiceContext());
 			}
 			else if (bookingUser.isPresent() &&
 					 user.equals(bookingUser.get())) {
@@ -572,58 +617,6 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 						calendarBooking, modifiedDate);
 				}
 			}
-		}
-
-		ExpandoBridge calendarBookingExpando =
-			calendarBooking.getExpandoBridge();
-
-		String invitedUsersCustomFieldName =
-			PropsValues.INVITED_USERS_CUSTOM_FIELD_NAME;
-
-		String invitedUsersLabelCustomFieldName =
-			PropsValues.INVITED_USERS_LABEL_CUSTOM_FIELD_NAME;
-
-		if (Validator.isNull(invitedUsersCustomFieldName)) {
-			return;
-		}
-
-		if (!calendarBookingExpando.hasAttribute(invitedUsersCustomFieldName)) {
-			calendarBookingExpando.addAttribute(
-				invitedUsersCustomFieldName,
-				ExpandoColumnConstants.STRING_ARRAY, new String[0],
-				Boolean.FALSE);
-
-			UnicodeProperties hiddenProperties = new UnicodeProperties();
-
-			hiddenProperties.setProperty(
-				ExpandoColumnConstants.PROPERTY_HIDDEN,
-				String.valueOf(Boolean.TRUE));
-
-			calendarBookingExpando.setAttributeProperties(
-				invitedUsersCustomFieldName, hiddenProperties, Boolean.FALSE);
-		}
-
-		if (Validator.isNotNull(invitedUsersLabelCustomFieldName) &&
-			!calendarBookingExpando.hasAttribute(
-				invitedUsersLabelCustomFieldName)) {
-
-			calendarBookingExpando.addAttribute(
-				invitedUsersLabelCustomFieldName,
-				ExpandoColumnConstants.STRING_ARRAY, new String[0],
-				Boolean.FALSE);
-		}
-
-		if (!ArrayUtil.isEmpty(attendees)) {
-			calendarBookingExpando.setAttribute(
-				invitedUsersCustomFieldName, attendees, Boolean.FALSE);
-		}
-
-		if (Validator.isNotNull(invitedUsersLabelCustomFieldName) &&
-			!ArrayUtil.isEmpty(attendeesEmailAddresses)) {
-
-			calendarBookingExpando.setAttribute(
-				invitedUsersLabelCustomFieldName, attendeesEmailAddresses,
-				Boolean.FALSE);
 		}
 	}
 
@@ -917,66 +910,33 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 			VEvent vEvent, CalendarBooking calendarBooking)
 		throws PortalException {
 
-		ExpandoBridge calendarBookingExpando =
-			calendarBooking.getExpandoBridge();
-
-		String invitedUsersCustomFieldName =
-			PropsValues.INVITED_USERS_CUSTOM_FIELD_NAME;
-
-		String invitedUsersLabelCustomFieldName =
-			PropsValues.INVITED_USERS_LABEL_CUSTOM_FIELD_NAME;
-
-		if (Validator.isNull(invitedUsersCustomFieldName) ||
-			Validator.isNull(invitedUsersLabelCustomFieldName)) {
-
-			return;
-		}
-
-		String[] attendees = GetterUtil.getStringValues(
-			calendarBookingExpando.getAttribute(
-				invitedUsersCustomFieldName, Boolean.FALSE));
-
-		String[] visibleAttendeeEmails = GetterUtil.getStringValues(
-			calendarBookingExpando.getAttribute(
-				invitedUsersLabelCustomFieldName, Boolean.FALSE));
-
 		PropertyList propertyList = vEvent.getProperties();
 
-		// remove attendee not into user visible custom field
+		List<CalendarBooking> childCalendarBookings =
+			calendarBooking.getChildCalendarBookings();
 
-		List<Attendee> allAttendees = new ArrayList<>();
+		for (CalendarBooking booking : childCalendarBookings) {
+			CalendarResource calendarResource = booking.getCalendarResource();
 
-		for (String attendeeString : attendees) {
-			Attendee attendee = _toICalAttendee(attendeeString);
+			long calendarResourceClassNameId =
+				calendarResource.getClassNameId();
 
-			String attendeeEmail = StringUtil.replace(
-				attendee.getValue(
-				).toLowerCase(),
-				"mailto:", StringPool.BLANK);
+			long scheduleContactClassNameId =
+				PortalUtil.getClassNameId(ScheduleContact.class);
 
-			if (ArrayUtil.contains(visibleAttendeeEmails, attendeeEmail)) {
-				visibleAttendeeEmails = ArrayUtil.remove(
-					visibleAttendeeEmails, attendeeEmail);
-				allAttendees.add(attendee);
+			if (calendarResourceClassNameId == scheduleContactClassNameId) {
+				ScheduleContact scheduleContact =
+					_scheduleContactLocalService.getScheduleContact(
+						calendarResource.getClassPK());
+
+				Attendee attendee = _toICalAttendee(
+					scheduleContact.getCommonName(),
+					scheduleContact.getEmailAddress(),
+					calendarBooking.getStatus());
+
+				propertyList.add(attendee);
 			}
 		}
-
-		// add new emails ad attendee
-
-		for (String attendeeEmail : visibleAttendeeEmails) {
-			URI uri = URI.create("mailto:" + attendeeEmail);
-
-			Attendee attendee = new Attendee(uri);
-
-			attendee.getParameters(
-			).add(
-				new Cn(attendeeEmail)
-			);
-
-			allAttendees.add(attendee);
-		}
-
-		propertyList.addAll(allAttendees);
 	}
 
 	protected void updateTitleAndDescription(
@@ -1141,6 +1101,34 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 		return attendee;
 	}
 
+	private Attendee _toICalAttendee(
+		String fullName, String emailAddress, int status) {
+
+		Attendee attendee = new Attendee();
+
+		URI uri = URI.create("mailto:".concat(emailAddress));
+
+		attendee.setCalAddress(uri);
+
+		Cn cn = new Cn(fullName);
+
+		ParameterList parameters = attendee.getParameters();
+
+		parameters.add(cn);
+		parameters.add(CuType.INDIVIDUAL);
+		parameters.add(net.fortuna.ical4j.model.parameter.Role.REQ_PARTICIPANT);
+		parameters.add(Rsvp.TRUE);
+
+		if (status == WorkflowConstants.STATUS_APPROVED) {
+			parameters.add(PartStat.ACCEPTED);
+		}
+		else {
+			parameters.add(PartStat.NEEDS_ACTION);
+		}
+
+		return attendee;
+	}
+
 	private void _updateAllBookingModifiedDate(
 			CalendarBooking calendarBooking, Date date)
 		throws PortalException {
@@ -1182,6 +1170,9 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 
 	@Reference(policyOption = ReferencePolicyOption.GREEDY)
 	private RoleLocalService _roleLocalService;
+
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	private ScheduleContactLocalService _scheduleContactLocalService;
 
 	@Reference(policyOption = ReferencePolicyOption.GREEDY)
 	private UserLocalService _userLocalService;
