@@ -20,19 +20,39 @@ import com.liferay.portal.kernel.exception.PortalException;
 import com.liferay.portal.kernel.log.Log;
 import com.liferay.portal.kernel.log.LogFactoryUtil;
 import com.liferay.portal.kernel.model.User;
-import com.liferay.portal.kernel.service.UserLocalServiceUtil;
+import com.liferay.portal.kernel.service.ClassNameLocalService;
+import com.liferay.portal.kernel.service.UserLocalService;
 
 import it.smc.calendar.caldav.helper.api.CalendarHelper;
 
 import java.util.Optional;
 
+import it.smc.calendar.caldav.schedule.contact.model.ScheduleContact;
+import it.smc.calendar.caldav.schedule.contact.service.ScheduleContactLocalService;
 import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.component.annotations.ReferencePolicyOption;
 
 /**
  * @author Fabio Pezzutto
  */
 @Component(immediate = true, service = CalendarHelper.class)
 public class CalendarHelperImpl implements CalendarHelper {
+
+	@Override
+	public Optional<ScheduleContact> getCalendarResourceScheduleContact(
+		CalendarResource calendarResource) {
+
+		if (!isCalendarResourceScheduleContactCalendar(calendarResource)) {
+			return Optional.empty();
+		}
+
+		ScheduleContact scheduleContact =
+			_scheduleContactLocalService.fetchScheduleContact(
+				calendarResource.getClassPK());
+
+		return Optional.ofNullable(scheduleContact);
+	}
 
 	public Optional<User> getCalendarResourceUser(
 		CalendarResource calendarResource) {
@@ -41,23 +61,42 @@ public class CalendarHelperImpl implements CalendarHelper {
 			return Optional.empty();
 		}
 
-		User user = UserLocalServiceUtil.fetchUser(
+		User user = _userLocalService.fetchUser(
 			calendarResource.getClassPK());
 
-		if (user != null) {
-			return Optional.of(user);
+		return Optional.ofNullable(user);
+	}
+
+	@Override
+	public boolean isCalendarResourceScheduleContactCalendar(
+		CalendarResource calendarResource) {
+
+		long classNameId =
+			_classNameLocalService.getClassNameId(ScheduleContact.class);
+
+		return calendarResource.getClassNameId() == classNameId;
+	}
+
+	@Override
+	public boolean isCalendarScheduleContactCalendar(Calendar calendar) {
+		try {
+			return isCalendarResourceScheduleContactCalendar(
+				calendar.getCalendarResource());
+		}
+		catch (PortalException pe) {
+			_log.error(pe, pe);
 		}
 
-		return Optional.empty();
+		return Boolean.FALSE;
 	}
 
 	public boolean isCalendarResourceUserCalendar(
 		CalendarResource calendarResource) {
 
-		return calendarResource.getClassName(
-		).equals(
-			User.class.getName()
-		);
+		long classNameId =
+			_classNameLocalService.getClassNameId(User.class);
+
+		return calendarResource.getClassNameId() == classNameId;
 	}
 
 	public boolean isCalendarUserCalendar(Calendar calendar) {
@@ -71,6 +110,15 @@ public class CalendarHelperImpl implements CalendarHelper {
 
 		return Boolean.FALSE;
 	}
+
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	private ClassNameLocalService _classNameLocalService;
+
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	private ScheduleContactLocalService _scheduleContactLocalService;
+
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	private UserLocalService _userLocalService;
 
 	private static Log _log = LogFactoryUtil.getLog(CalendarHelperImpl.class);
 

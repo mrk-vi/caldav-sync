@@ -17,6 +17,7 @@ package it.smc.calendar.caldav.helper.api;
 import com.liferay.calendar.model.Calendar;
 import com.liferay.calendar.model.CalendarResource;
 import com.liferay.portal.kernel.model.User;
+import it.smc.calendar.caldav.schedule.contact.model.ScheduleContact;
 
 import java.util.Optional;
 
@@ -25,8 +26,16 @@ import java.util.Optional;
  */
 public interface CalendarHelper {
 
+	public Optional<ScheduleContact> getCalendarResourceScheduleContact(
+		CalendarResource calendarResource);
+
 	public Optional<User> getCalendarResourceUser(
 		CalendarResource calendarResource);
+
+	public boolean isCalendarResourceScheduleContactCalendar(
+		CalendarResource calendarResource);
+
+	public boolean isCalendarScheduleContactCalendar(Calendar calendar);
 
 	public boolean isCalendarResourceUserCalendar(
 		CalendarResource calendarResource);

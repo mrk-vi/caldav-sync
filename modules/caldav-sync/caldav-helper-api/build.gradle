@@ -3,4 +3,6 @@ dependencies {
 	compileOnly group: "com.liferay.portal", name: "com.liferay.portal.kernel"
 	compileOnly group: "org.osgi", name: "org.osgi.core"
 	compileOnly group: "org.osgi", name: "org.osgi.service.component.annotations"
+
+	compileOnly project(":modules:caldav-sync:caldav-schedule-contact:caldav-schedule-contact-api")
 }

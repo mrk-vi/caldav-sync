@@ -494,6 +494,12 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 			PermissionChecker currentPermissionChecker =
 				PermissionThreadLocal.getPermissionChecker();
 
+			ICSImportExportListener icsContentListener =
+				ICSContentImportExportFactoryUtil.newInstance();
+
+			data = icsContentListener.beforeContentImported(
+				data, targetCalendar);
+
 			try {
 				long userId = targetCalendar.getUserId();
 
@@ -506,17 +512,10 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 				PermissionThreadLocal.setPermissionChecker(
 					permissionChecker);
 
-				ICSImportExportListener icsContentListener =
-					ICSContentImportExportFactoryUtil.newInstance();
-
-				data = icsContentListener.beforeContentImported(
-					data, targetCalendar);
-
 				_calendarLocalService.importCalendar(
 					targetCalendar.getCalendarId(), data,
 					CalendarDataFormat.ICAL.getValue());
 
-				icsContentListener.afterContentImported(data, targetCalendar);
 			}
 			finally {
 				PrincipalThreadLocal.setName(currentPrincipal);
@@ -524,6 +523,8 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 				PermissionThreadLocal.setPermissionChecker(
 					currentPermissionChecker);
 			}
+
+			icsContentListener.afterContentImported(data, targetCalendar);
 
 			String vEventUid = ICalUtil.getVEventUid(data);
 

@@ -20,6 +20,7 @@ import com.liferay.portal.kernel.model.User;
 
 import java.util.Optional;
 
+import it.smc.calendar.caldav.schedule.contact.model.ScheduleContact;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.FrameworkUtil;
 import org.osgi.util.tracker.ServiceTracker;
@@ -29,10 +30,31 @@ import org.osgi.util.tracker.ServiceTracker;
  */
 public class CalendarHelperUtil {
 
+	public static Optional<ScheduleContact> getCalendarResourceScheduleContact(
+		CalendarResource calendarResource) {
+
+		return getService().getCalendarResourceScheduleContact(
+			calendarResource);
+	}
+
+
 	public static Optional<User> getCalendarResourceUser(
 		CalendarResource calendarResource) {
 
 		return getService().getCalendarResourceUser(calendarResource);
+	}
+
+	public static boolean isCalendarResourceScheduleContactCalendar(
+		CalendarResource calendarResource) {
+
+		return getService().isCalendarResourceScheduleContactCalendar(
+			calendarResource);
+	}
+
+	public static boolean isCalendarScheduleContactCalendar(
+		Calendar calendar) {
+
+		return getService().isCalendarScheduleContactCalendar(calendar);
 	}
 
 	public static CalendarHelper getService() {

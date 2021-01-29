@@ -22,8 +22,6 @@ import com.liferay.calendar.model.CalendarResource;
 import com.liferay.calendar.service.CalendarBookingLocalService;
 import com.liferay.calendar.util.JCalendarUtil;
 import com.liferay.calendar.workflow.CalendarBookingWorkflowConstants;
-import com.liferay.expando.kernel.model.ExpandoBridge;
-import com.liferay.expando.kernel.model.ExpandoColumnConstants;
 import com.liferay.petra.string.StringPool;
 import com.liferay.portal.kernel.exception.PortalException;
 import com.liferay.portal.kernel.io.unsync.UnsyncStringReader;
@@ -40,21 +38,17 @@ import com.liferay.portal.kernel.security.permission.PermissionChecker;
 import com.liferay.portal.kernel.security.permission.PermissionCheckerFactoryUtil;
 import com.liferay.portal.kernel.security.permission.PermissionThreadLocal;
 import com.liferay.portal.kernel.security.permission.resource.ModelResourcePermission;
+import com.liferay.portal.kernel.service.ClassNameLocalService;
 import com.liferay.portal.kernel.service.RoleLocalService;
 import com.liferay.portal.kernel.service.ServiceContext;
 import com.liferay.portal.kernel.service.ServiceContextThreadLocal;
 import com.liferay.portal.kernel.service.UserLocalService;
-import com.liferay.portal.kernel.util.ArrayUtil;
-import com.liferay.portal.kernel.util.GetterUtil;
-import com.liferay.portal.kernel.util.PortalUtil;
 import com.liferay.portal.kernel.util.StringUtil;
-import com.liferay.portal.kernel.util.UnicodeProperties;
 import com.liferay.portal.kernel.util.Validator;
 import com.liferay.portal.kernel.workflow.WorkflowConstants;
 
+import it.smc.calendar.caldav.helper.api.CalendarHelper;
 import it.smc.calendar.caldav.helper.api.CalendarHelperUtil;
-import it.smc.calendar.caldav.helper.util.PropsValues;
-import it.smc.calendar.caldav.schedule.contact.model.ScheduleContact;
 import it.smc.calendar.caldav.schedule.contact.service.ScheduleContactLocalService;
 import it.smc.calendar.caldav.sync.ical.util.AttendeeUtil;
 import it.smc.calendar.caldav.sync.util.CalDAVUtil;
@@ -63,7 +57,6 @@ import java.io.IOException;
 
 import java.net.URI;
 
-import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -145,7 +138,6 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 
 					if (calendarBooking != null) {
 						updateBookingAttendees(calendarBooking, vEvent);
-						updateAltDescription(calendarBooking, vEvent);
 						updateTitleAndDescription(calendarBooking, vEvent);
 					}
 				}
@@ -188,8 +180,8 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 
 					updateICSExternalAttendees(vEvent, calendarBooking);
 
-					updateDowloadedInvitations(
-						currentUser, iCalCalendar, vEvent, calendarBooking);
+//					updateDowloadedInvitations(
+//						currentUser, iCalCalendar, vEvent, calendarBooking);
 
 					updateAllDayDate(vEvent, calendarBooking, currentUser);
 
@@ -553,10 +545,17 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 						calendarBooking.getCompanyId(), commonName,
 						attendeeEmail, new ServiceContext());
 
-				CalendarBooking externalBooking =
-					_calendarBookingLocalService.fetchCalendarBooking(
-						externalCalendar.getCalendarId(),
-						vEvent.getUid().getValue());
+				CalendarBooking externalBooking;
+
+				try {
+					externalBooking =
+						_calendarBookingLocalService.getCalendarBooking(
+							externalCalendar.getCalendarId(),
+							calendarBooking.getParentCalendarBookingId());
+				}
+				catch (PortalException pe) {
+					externalBooking = null;
+				}
 
 				if (Validator.isNull(externalBooking)) {
 					externalBooking =
@@ -915,27 +914,18 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 		List<CalendarBooking> childCalendarBookings =
 			calendarBooking.getChildCalendarBookings();
 
-		for (CalendarBooking booking : childCalendarBookings) {
-			CalendarResource calendarResource = booking.getCalendarResource();
+		for (CalendarBooking childBooking : childCalendarBookings) {
+			CalendarResource calendarResource = childBooking.getCalendarResource();
 
-			long calendarResourceClassNameId =
-				calendarResource.getClassNameId();
-
-			long scheduleContactClassNameId =
-				PortalUtil.getClassNameId(ScheduleContact.class);
-
-			if (calendarResourceClassNameId == scheduleContactClassNameId) {
-				ScheduleContact scheduleContact =
-					_scheduleContactLocalService.getScheduleContact(
-						calendarResource.getClassPK());
-
-				Attendee attendee = _toICalAttendee(
-					scheduleContact.getCommonName(),
-					scheduleContact.getEmailAddress(),
-					calendarBooking.getStatus());
-
-				propertyList.add(attendee);
-			}
+			_calendarHelper.getCalendarResourceScheduleContact(
+					calendarResource)
+				.ifPresent( scheduleContact -> propertyList.add(
+					_toICalAttendee(
+						scheduleContact.getCommonName(),
+						scheduleContact.getEmailAddress(),
+						childBooking.getStatus())
+					)
+				);
 		}
 	}
 
@@ -1166,7 +1156,13 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 	@Reference(policyOption = ReferencePolicyOption.GREEDY)
 	private CalendarBookingLocalService _calendarBookingLocalService;
 
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	private CalendarHelper _calendarHelper;
+
 	private ModelResourcePermission<Calendar> _calendarModelResourcePermission;
+
+	@Reference(policyOption = ReferencePolicyOption.GREEDY)
+	private ClassNameLocalService _classNameLocalService;
 
 	@Reference(policyOption = ReferencePolicyOption.GREEDY)
 	private RoleLocalService _roleLocalService;
