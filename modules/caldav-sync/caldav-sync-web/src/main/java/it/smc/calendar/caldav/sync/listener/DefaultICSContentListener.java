@@ -972,6 +972,7 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 
 	private void _updateCalendarBooking(CalendarBooking calendarBooking)
 		throws PortalException {
+
 		_calendarBookingLocalService.updateCalendarBooking(
 			calendarBooking.getUserId(),
 			calendarBooking.getCalendarBookingId(),
