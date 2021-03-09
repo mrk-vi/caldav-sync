@@ -43,6 +43,7 @@ import com.liferay.portal.kernel.service.RoleLocalService;
 import com.liferay.portal.kernel.service.ServiceContext;
 import com.liferay.portal.kernel.service.ServiceContextThreadLocal;
 import com.liferay.portal.kernel.service.UserLocalService;
+import com.liferay.portal.kernel.util.Portal;
 import com.liferay.portal.kernel.util.StringUtil;
 import com.liferay.portal.kernel.util.Validator;
 import com.liferay.portal.kernel.workflow.WorkflowConstants;
@@ -960,7 +961,31 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 		calendarBooking.setTitleMap(titleMap);
 		calendarBooking.setDescriptionMap(descriptionMap);
 
-		_calendarBookingLocalService.updateCalendarBooking(calendarBooking);
+		try {
+			_updateCalendarBooking(calendarBooking);
+		} catch (PortalException pe) {
+			_log.warn(
+				"Something went wrong while trying" +
+				" to update calendarBooking");
+		}
+	}
+
+	private void _updateCalendarBooking(CalendarBooking calendarBooking)
+		throws PortalException {
+		_calendarBookingLocalService.updateCalendarBooking(
+			calendarBooking.getUserId(),
+			calendarBooking.getCalendarBookingId(),
+			calendarBooking.getCalendarId(), calendarBooking.getTitleMap(),
+			calendarBooking.getDescriptionMap(),
+			calendarBooking.getLocation(), calendarBooking.getStartTime(),
+			calendarBooking.getEndTime(), calendarBooking.getAllDay(),
+			calendarBooking.getRecurrence(),
+			calendarBooking.getFirstReminder(),
+			calendarBooking.getFirstReminderType(),
+			calendarBooking.getSecondReminder(),
+			calendarBooking.getSecondReminderType(),
+			ServiceContextThreadLocal.getServiceContext()
+		);
 	}
 
 	private List<String> _getNotificationRecipients(Calendar calendar)
@@ -1129,8 +1154,7 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 		if (calendarBooking.getModifiedDate().getTime() < date.getTime()) {
 			parentCalendarBooking.setModifiedDate(date);
 
-			_calendarBookingLocalService.updateCalendarBooking(
-				parentCalendarBooking);
+			_updateCalendarBooking(parentCalendarBooking);
 		}
 
 		List<CalendarBooking> childCalendarBookings =
@@ -1145,8 +1169,7 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 
 			childCalendarBooking.setModifiedDate(date);
 
-			_calendarBookingLocalService.updateCalendarBooking(
-				childCalendarBooking);
+			_updateCalendarBooking(childCalendarBooking);
 		}
 	}
 
