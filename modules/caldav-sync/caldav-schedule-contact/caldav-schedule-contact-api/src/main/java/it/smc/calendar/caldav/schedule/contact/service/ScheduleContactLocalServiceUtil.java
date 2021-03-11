@@ -242,12 +242,12 @@ public class ScheduleContactLocalServiceUtil {
 	}
 
 	public static com.liferay.calendar.model.Calendar getDefaultCalendar(
-			long companyId, String commonName, String emailAddress,
+			it.smc.calendar.caldav.schedule.contact.model.ScheduleContact
+				scheduleContact,
 			com.liferay.portal.kernel.service.ServiceContext serviceContext)
 		throws com.liferay.portal.kernel.exception.PortalException {
 
-		return getService().getDefaultCalendar(
-			companyId, commonName, emailAddress, serviceContext);
+		return getService().getDefaultCalendar(scheduleContact, serviceContext);
 	}
 
 	public static com.liferay.portal.kernel.dao.orm.ExportActionableDynamicQuery

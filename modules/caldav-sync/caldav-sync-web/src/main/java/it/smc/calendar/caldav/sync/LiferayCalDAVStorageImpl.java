@@ -58,6 +58,7 @@ import com.liferay.portal.kernel.webdav.methods.MethodFactoryRegistryUtil;
 import com.liferay.portal.kernel.workflow.WorkflowConstants;
 
 import it.smc.calendar.caldav.helper.api.CalendarHelper;
+import it.smc.calendar.caldav.schedule.contact.model.ScheduleContact;
 import it.smc.calendar.caldav.schedule.contact.service.ScheduleContactLocalService;
 import it.smc.calendar.caldav.sync.ical.util.AttendeeUtil;
 import it.smc.calendar.caldav.sync.listener.ICSContentImportExportFactoryUtil;
@@ -477,10 +478,14 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 						commonName = commonNameParam.getValue();
 					}
 
+					ScheduleContact scheduleContact =
+						_scheduleContactLocalService.addScheduleContact(
+							calendar.getCompanyId(), commonName,
+							organizerEmailAddress, serviceContext);
+
 					targetCalendar =
 						_scheduleContactLocalService.getDefaultCalendar(
-							calendar.getCompanyId(), commonName,
-							organizerEmailAddress, new ServiceContext());
+							scheduleContact, new ServiceContext());
 				}
 			}
 

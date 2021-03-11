@@ -265,12 +265,13 @@ public class ScheduleContactLocalServiceWrapper
 
 	@Override
 	public com.liferay.calendar.model.Calendar getDefaultCalendar(
-			long companyId, String commonName, String emailAddress,
+			it.smc.calendar.caldav.schedule.contact.model.ScheduleContact
+				scheduleContact,
 			com.liferay.portal.kernel.service.ServiceContext serviceContext)
 		throws com.liferay.portal.kernel.exception.PortalException {
 
 		return _scheduleContactLocalService.getDefaultCalendar(
-			companyId, commonName, emailAddress, serviceContext);
+			scheduleContact, serviceContext);
 	}
 
 	@Override

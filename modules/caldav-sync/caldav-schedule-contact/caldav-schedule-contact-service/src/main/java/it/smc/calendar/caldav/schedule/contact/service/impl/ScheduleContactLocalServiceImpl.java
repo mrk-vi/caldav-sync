@@ -16,7 +16,6 @@ package it.smc.calendar.caldav.schedule.contact.service.impl;
 
 import com.liferay.calendar.model.Calendar;
 import com.liferay.calendar.model.CalendarResource;
-import com.liferay.calendar.service.CalendarLocalService;
 import com.liferay.calendar.service.CalendarResourceLocalService;
 import com.liferay.petra.string.StringPool;
 import com.liferay.portal.aop.AopService;
@@ -25,11 +24,11 @@ import com.liferay.portal.kernel.exception.EmailAddressException;
 import com.liferay.portal.kernel.exception.PortalException;
 import com.liferay.portal.kernel.language.LanguageUtil;
 import com.liferay.portal.kernel.model.Group;
-import com.liferay.portal.kernel.model.ResourceConstants;
 import com.liferay.portal.kernel.model.Role;
 import com.liferay.portal.kernel.model.RoleConstants;
 import com.liferay.portal.kernel.model.User;
-import com.liferay.portal.kernel.security.permission.ActionKeys;
+import com.liferay.portal.kernel.search.Indexable;
+import com.liferay.portal.kernel.search.IndexableType;
 import com.liferay.portal.kernel.service.GroupLocalService;
 import com.liferay.portal.kernel.service.ResourcePermissionLocalService;
 import com.liferay.portal.kernel.service.RoleLocalService;
@@ -45,6 +44,7 @@ import org.osgi.service.component.annotations.ReferencePolicyOption;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -74,6 +74,7 @@ public class ScheduleContactLocalServiceImpl
 	 * Never reference this class directly. Use <code>it.smc.calendar.caldav.schedule.contact.service.ScheduleContactLocalService</code> via injection or a <code>org.osgi.util.tracker.ServiceTracker</code> or use <code>it.smc.calendar.caldav.schedule.contact.service.ScheduleContactLocalServiceUtil</code>.
 	 */
 
+	@Indexable(type = IndexableType.REINDEX)
 	@Override
 	public ScheduleContact addScheduleContact(
 			long companyId, String commonName, String emailAddress, ServiceContext serviceContext)
@@ -94,7 +95,7 @@ public class ScheduleContactLocalServiceImpl
 		long scheduleContactId = counterLocalService.increment();
 
 		scheduleContact =
-			scheduleContactPersistence.create(scheduleContactId);
+			createScheduleContact(scheduleContactId);
 
 		if (Validator.isNull(serviceContext)) {
 			serviceContext = new ServiceContext();
@@ -138,9 +139,7 @@ public class ScheduleContactLocalServiceImpl
 		scheduleContact.setUserId(userId);
 		scheduleContact.setUserName(user.getFullName());
 
-		scheduleContactPersistence.update(scheduleContact);
-
-		return scheduleContact;
+		return addScheduleContact(scheduleContact);
 	}
 
 	@Override
@@ -172,25 +171,14 @@ public class ScheduleContactLocalServiceImpl
 		return scheduleContactPersistence.findByC_E(companyId, emailAddress);
 	}
 
+	@Indexable(type = IndexableType.REINDEX)
 	@Override
 	public Calendar getDefaultCalendar(
-			long companyId, String commonName, String emailAddress,
-			ServiceContext serviceContext)
+			ScheduleContact scheduleContact, ServiceContext serviceContext)
 		throws PortalException {
-
-		Calendar calendar = fetchDefaultCalendar(companyId, emailAddress);
-
-		if (Validator.isNotNull(calendar)) {
-			return calendar;
-		}
-
-		ScheduleContact scheduleContact =
-			addScheduleContact(companyId, commonName, emailAddress,
-				serviceContext);
 
 		return _getCalendar(scheduleContact, serviceContext);
 	}
-
 
 	private Calendar _getCalendar(ScheduleContact scheduleContact) {
 		long classNameId =
@@ -216,7 +204,7 @@ public class ScheduleContactLocalServiceImpl
 		}
 
 		long classNameId =
-		classNameLocalService.getClassNameId(ScheduleContact.class);
+			classNameLocalService.getClassNameId(ScheduleContact.class);
 
 		CalendarResource calendarResource =
 			calendarResourceLocalService.fetchCalendarResource(
@@ -232,9 +220,17 @@ public class ScheduleContactLocalServiceImpl
 			nameMap.put(locale, scheduleContact.getCommonName());
 		}
 
+		Role adminRole = roleLocalService.getRole(
+			scheduleContact.getCompanyId(), RoleConstants.ADMINISTRATOR);
+
+		List<User> adminUsers = userLocalService.getRoleUsers(
+			adminRole.getRoleId());
+
+		long adminUserId = adminUsers.get(0).getUserId();
+
 		calendarResource =
 			calendarResourceLocalService.addCalendarResource(
-				scheduleContact.getUserId(), scheduleContact.getGroupId(),
+				adminUserId, scheduleContact.getGroupId(),
 				classNameId, scheduleContact.getScheduleContactId(),
 				StringPool.BLANK, StringPool.BLANK, nameMap,
 				Collections.emptyMap(), true, serviceContext);

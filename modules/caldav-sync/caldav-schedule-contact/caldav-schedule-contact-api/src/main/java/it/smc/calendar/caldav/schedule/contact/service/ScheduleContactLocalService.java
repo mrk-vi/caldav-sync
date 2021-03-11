@@ -65,6 +65,7 @@ public interface ScheduleContactLocalService
 	 *
 	 * Never modify or reference this interface directly. Always use {@link ScheduleContactLocalServiceUtil} to access the schedule contact local service. Add custom service methods to <code>it.smc.calendar.caldav.schedule.contact.service.impl.ScheduleContactLocalServiceImpl</code> and rerun ServiceBuilder to automatically copy the method declarations to this interface.
 	 */
+	@Indexable(type = IndexableType.REINDEX)
 	public ScheduleContact addScheduleContact(
 			long companyId, String commonName, String emailAddress,
 			ServiceContext serviceContext)
@@ -210,10 +211,10 @@ public interface ScheduleContactLocalService
 	@Transactional(propagation = Propagation.SUPPORTS, readOnly = true)
 	public ActionableDynamicQuery getActionableDynamicQuery();
 
+	@Indexable(type = IndexableType.REINDEX)
 	@Transactional(propagation = Propagation.SUPPORTS, readOnly = true)
 	public Calendar getDefaultCalendar(
-			long companyId, String commonName, String emailAddress,
-			ServiceContext serviceContext)
+			ScheduleContact scheduleContact, ServiceContext serviceContext)
 		throws PortalException;
 
 	@Transactional(propagation = Propagation.SUPPORTS, readOnly = true)

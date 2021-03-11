@@ -541,10 +541,15 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 					commonName = cnParameter.getValue();
 				}
 
-				Calendar externalCalendar =
-					_scheduleContactLocalService.getDefaultCalendar(
+				ScheduleContact scheduleContact =
+					_scheduleContactLocalService.addScheduleContact(
 						calendarBooking.getCompanyId(), commonName,
 						attendeeEmail, new ServiceContext());
+
+				Calendar externalCalendar =
+					_scheduleContactLocalService.getDefaultCalendar(
+						scheduleContact,
+						ServiceContextThreadLocal.getServiceContext());
 
 				CalendarBooking externalBooking;
 
