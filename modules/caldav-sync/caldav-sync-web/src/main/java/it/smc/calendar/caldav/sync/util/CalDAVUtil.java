@@ -46,6 +46,9 @@ import com.liferay.portal.kernel.xml.XPath;
 import it.smc.calendar.caldav.helper.api.UserAgentHelperUtil;
 import it.smc.calendar.caldav.util.CalendarUtil;
 
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
@@ -179,15 +182,35 @@ public class CalDAVUtil {
 	}
 
 	public static String getICSNameFromURL(String URL) {
-		if (!URL.endsWith(CalendarDataFormat.ICAL.getValue())) {
+		if (!URL.endsWith(
+			StringPool.PERIOD + CalendarDataFormat.ICAL.getValue())) {
+
 			return null;
 		}
 
 		String calendarBookingICSStr = StringUtil.extractLast(
 			URL, StringPool.SLASH);
 
-		return StringUtil.extractFirst(
-			calendarBookingICSStr, StringPool.PERIOD);
+		calendarBookingICSStr = calendarBookingICSStr.substring(
+			0 , calendarBookingICSStr.lastIndexOf(StringPool.PERIOD));
+
+		String decoded =  calendarBookingICSStr;
+
+		try {
+			decoded = URLDecoder.decode(calendarBookingICSStr,
+				StandardCharsets.UTF_8.displayName());
+
+			while (!decoded.equals(calendarBookingICSStr)) {
+				calendarBookingICSStr = decoded;
+				decoded = URLDecoder.decode(calendarBookingICSStr,
+					StandardCharsets.UTF_8.displayName());
+			}
+		}
+		catch (UnsupportedEncodingException uee) {
+			_log.warn("Can not decode the url: " + decoded);
+		}
+
+		return calendarBookingICSStr;
 	}
 
 	public static String getPrincipalURL(long userId) {
