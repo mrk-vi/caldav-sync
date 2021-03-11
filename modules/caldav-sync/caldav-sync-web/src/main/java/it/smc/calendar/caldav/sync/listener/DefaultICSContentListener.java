@@ -43,13 +43,13 @@ import com.liferay.portal.kernel.service.RoleLocalService;
 import com.liferay.portal.kernel.service.ServiceContext;
 import com.liferay.portal.kernel.service.ServiceContextThreadLocal;
 import com.liferay.portal.kernel.service.UserLocalService;
-import com.liferay.portal.kernel.util.Portal;
 import com.liferay.portal.kernel.util.StringUtil;
 import com.liferay.portal.kernel.util.Validator;
 import com.liferay.portal.kernel.workflow.WorkflowConstants;
 
 import it.smc.calendar.caldav.helper.api.CalendarHelper;
 import it.smc.calendar.caldav.helper.api.CalendarHelperUtil;
+import it.smc.calendar.caldav.schedule.contact.model.ScheduleContact;
 import it.smc.calendar.caldav.schedule.contact.service.ScheduleContactLocalService;
 import it.smc.calendar.caldav.sync.ical.util.AttendeeUtil;
 import it.smc.calendar.caldav.sync.util.CalDAVUtil;
@@ -112,9 +112,36 @@ import org.osgi.service.component.annotations.ReferencePolicyOption;
 @Component(immediate = true, service = ICSImportExportListener.class)
 public class DefaultICSContentListener implements ICSImportExportListener {
 
-	public void afterContentExported(
+	public CalendarBooking afterContentExported(
 			String ics, CalendarBooking calendarBooking)
 		throws SanitizerException {
+
+		return calendarBooking;
+	}
+
+	public CalendarBooking afterContentImported(
+			String ics, CalendarBooking calendarBooking)
+		throws SanitizerException {
+
+		try {
+			net.fortuna.ical4j.model.Calendar iCalCalendar = getICalendar(ics);
+
+			VEvent vEvent = (VEvent)iCalCalendar.getComponent(
+				net.fortuna.ical4j.model.Component.VEVENT);
+
+			if (calendarBooking != null) {
+				calendarBooking =
+					updateTitleAndDescription(calendarBooking, vEvent);
+
+				calendarBooking =
+					updateBookingAttendees(calendarBooking, vEvent);
+			}
+
+			return calendarBooking;
+		}
+		catch (Exception e) {
+			throw new SanitizerException(e);
+		}
 	}
 
 	public void afterContentImported(String ics, Calendar calendar)
@@ -502,7 +529,7 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 		_replaceDescription(vEvent, vEventXAltDesc);
 	}
 
-	protected void updateBookingAttendees(
+	protected CalendarBooking updateBookingAttendees(
 			CalendarBooking calendarBooking, VEvent vEvent)
 		throws PortalException {
 
@@ -525,12 +552,19 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 				continue;
 			}
 
+			ServiceContext serviceContext =
+				ServiceContextThreadLocal.getServiceContext();
+
 			User user = _userLocalService.fetchUserByEmailAddress(
 				calendarBooking.getCompanyId(), attendeeEmail);
 
-			Optional<User> bookingUser =
-				CalendarHelperUtil.getCalendarResourceUser(
-					calendarBooking.getCalendarResource());
+			Map<Long, CalendarBooking> userBookings = new HashMap<>();
+
+			for (CalendarBooking cb :
+				calendarBooking.getChildCalendarBookings()) {
+
+				userBookings.put(cb.getCalendar().getUserId(), cb);
+			}
 
 			if (user == null) {
 				Parameter cnParameter = attendee.getParameter(Parameter.CN);
@@ -544,12 +578,12 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 				ScheduleContact scheduleContact =
 					_scheduleContactLocalService.addScheduleContact(
 						calendarBooking.getCompanyId(), commonName,
-						attendeeEmail, new ServiceContext());
+						attendeeEmail, serviceContext);
 
 				Calendar externalCalendar =
 					_scheduleContactLocalService.getDefaultCalendar(
 						scheduleContact,
-						ServiceContextThreadLocal.getServiceContext());
+						serviceContext);
 
 				CalendarBooking externalBooking;
 
@@ -581,7 +615,7 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 							calendarBooking.getFirstReminderType(),
 							calendarBooking.getSecondReminder(),
 							calendarBooking.getSecondReminderType(),
-							new ServiceContext());
+							serviceContext);
 				}
 
 				_calendarBookingLocalService.updateStatus(
@@ -589,24 +623,21 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 					externalBooking.getCalendarBookingId(),
 					AttendeeUtil.getStatus(
 						attendee, WorkflowConstants.STATUS_PENDING),
-					new ServiceContext());
+					ServiceContextThreadLocal.getServiceContext());
 			}
-			else if (bookingUser.isPresent() &&
-					 user.equals(bookingUser.get())) {
+			else if (user.getUserId() == PrincipalThreadLocal.getUserId()
+					 && userBookings.containsKey(user.getUserId())) {
+				CalendarBooking internalBooking =
+					userBookings.get(user.getUserId());
 
 				int status = AttendeeUtil.getStatus(
-					attendee, calendarBooking.getStatus());
+					attendee, internalBooking.getStatus());
 
-				if (status != calendarBooking.getStatus()) {
-					ServiceContext serviceContext =
-						ServiceContextThreadLocal.getServiceContext();
-
-					_calendarBookingLocalService.updateStatus(
-						user.getUserId(), calendarBooking, status,
-						serviceContext);
-
-					// TODO: update parent modified date, it shouldn't be
-					// necessary
+				if (status != internalBooking.getStatus()) {
+					internalBooking =
+						_calendarBookingLocalService.updateStatus(
+							user.getUserId(), internalBooking, status,
+							serviceContext);
 
 					LastModified iCalLastModified =
 						(LastModified)vEvent.getProperty(
@@ -618,11 +649,14 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 						modifiedDate = iCalLastModified.getDate();
 					}
 
-					_updateAllBookingModifiedDate(
-						calendarBooking, modifiedDate);
+					_updateBookingModifiedDate(
+						internalBooking, modifiedDate);
 				}
 			}
 		}
+
+		return _calendarBookingLocalService.getCalendarBooking(
+			calendarBooking.getCalendarBookingId());
 	}
 
 	protected void updateDowloadedInvitations(
@@ -935,8 +969,9 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 		}
 	}
 
-	protected void updateTitleAndDescription(
-		CalendarBooking calendarBooking, VEvent vEvent) {
+	protected CalendarBooking updateTitleAndDescription(
+			CalendarBooking calendarBooking, VEvent vEvent)
+		throws PortalException {
 
 		Locale locale;
 
@@ -966,32 +1001,8 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 		calendarBooking.setTitleMap(titleMap);
 		calendarBooking.setDescriptionMap(descriptionMap);
 
-		try {
-			_updateCalendarBooking(calendarBooking);
-		} catch (PortalException pe) {
-			_log.warn(
-				"Something went wrong while trying" +
-				" to update calendarBooking");
-		}
-	}
-
-	private void _updateCalendarBooking(CalendarBooking calendarBooking)
-		throws PortalException {
-
-		_calendarBookingLocalService.updateCalendarBooking(
-			calendarBooking.getUserId(),
-			calendarBooking.getCalendarBookingId(),
-			calendarBooking.getCalendarId(), calendarBooking.getTitleMap(),
-			calendarBooking.getDescriptionMap(),
-			calendarBooking.getLocation(), calendarBooking.getStartTime(),
-			calendarBooking.getEndTime(), calendarBooking.getAllDay(),
-			calendarBooking.getRecurrence(),
-			calendarBooking.getFirstReminder(),
-			calendarBooking.getFirstReminderType(),
-			calendarBooking.getSecondReminder(),
-			calendarBooking.getSecondReminderType(),
-			ServiceContextThreadLocal.getServiceContext()
-		);
+		return _calendarBookingLocalService.updateCalendarBooking(
+			calendarBooking);
 	}
 
 	private List<String> _getNotificationRecipients(Calendar calendar)
@@ -1150,7 +1161,7 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 		return attendee;
 	}
 
-	private void _updateAllBookingModifiedDate(
+	private void _updateBookingModifiedDate(
 			CalendarBooking calendarBooking, Date date)
 		throws PortalException {
 
@@ -1160,22 +1171,9 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 		if (calendarBooking.getModifiedDate().getTime() < date.getTime()) {
 			parentCalendarBooking.setModifiedDate(date);
 
-			_updateCalendarBooking(parentCalendarBooking);
-		}
-
-		List<CalendarBooking> childCalendarBookings =
-			parentCalendarBooking.getChildCalendarBookings();
-
-		for (CalendarBooking childCalendarBooking : childCalendarBookings) {
-			if (childCalendarBooking.getModifiedDate().getTime() >=
-					date.getTime()) {
-
-				continue;
-			}
-
-			childCalendarBooking.setModifiedDate(date);
-
-			_updateCalendarBooking(childCalendarBooking);
+			parentCalendarBooking =
+				_calendarBookingLocalService.updateCalendarBooking(
+					parentCalendarBooking);
 		}
 	}
 

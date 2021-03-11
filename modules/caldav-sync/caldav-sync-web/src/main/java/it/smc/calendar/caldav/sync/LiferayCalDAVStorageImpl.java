@@ -40,7 +40,6 @@ import com.liferay.portal.kernel.security.permission.PermissionThreadLocal;
 import com.liferay.portal.kernel.security.permission.resource.ModelResourcePermission;
 import com.liferay.portal.kernel.service.ServiceContext;
 import com.liferay.portal.kernel.service.ServiceContextFactory;
-import com.liferay.portal.kernel.service.ServiceContextThreadLocal;
 import com.liferay.portal.kernel.service.UserLocalService;
 import com.liferay.portal.kernel.service.UserService;
 import com.liferay.portal.kernel.util.FileUtil;
@@ -60,7 +59,6 @@ import com.liferay.portal.kernel.workflow.WorkflowConstants;
 import it.smc.calendar.caldav.helper.api.CalendarHelper;
 import it.smc.calendar.caldav.schedule.contact.model.ScheduleContact;
 import it.smc.calendar.caldav.schedule.contact.service.ScheduleContactLocalService;
-import it.smc.calendar.caldav.sync.ical.util.AttendeeUtil;
 import it.smc.calendar.caldav.sync.listener.ICSContentImportExportFactoryUtil;
 import it.smc.calendar.caldav.sync.listener.ICSImportExportListener;
 import it.smc.calendar.caldav.sync.util.CalDAVHttpMethods;
@@ -78,7 +76,6 @@ import java.util.Optional;
 import javax.servlet.http.HttpServletResponse;
 
 import net.fortuna.ical4j.model.Parameter;
-import net.fortuna.ical4j.model.property.Attendee;
 import net.fortuna.ical4j.model.property.Organizer;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Reference;
@@ -126,9 +123,8 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 					currentUser.equals(calendarResourceUser.get())) {
 
 					ServiceContext serviceContext =
-						ServiceContextFactory.getInstance(
-							CalendarBooking.class.getName(),
-							webDAVRequest.getHttpServletRequest());
+						_getServiceContext(
+							webDAVRequest, CalendarBooking.class);
 
 					_calendarBookingLocalService.updateStatus(
 						currentUserId, calendarBooking,
@@ -449,6 +445,10 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 
 			String userEmailAddress = calendarUser.getEmailAddress();
 
+			ServiceContext serviceContext =
+				_getServiceContext(
+					webDAVRequest, CalendarBooking.class);
+
 			if (Validator.isNotNull(organizer)) {
 				String organizerEmailAddress =
 					organizer.getCalAddress().getSchemeSpecificPart();
@@ -485,7 +485,7 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 
 					targetCalendar =
 						_scheduleContactLocalService.getDefaultCalendar(
-							scheduleContact, new ServiceContext());
+							scheduleContact, serviceContext);
 				}
 			}
 
@@ -529,26 +529,13 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 					currentPermissionChecker);
 			}
 
-			icsContentListener.afterContentImported(data, targetCalendar);
-
 			String vEventUid = ICalUtil.getVEventUid(data);
-
-			Attendee attendee = ICalUtil.fetchAttendee(data, userEmailAddress);
 
 			CalendarBooking calendarBooking =
 				_calendarBookingLocalService.fetchCalendarBooking(
-					calendar.getCalendarId(), vEventUid);
+					targetCalendar.getCalendarId(), vEventUid);
 
-			if (Validator.isNotNull(attendee) &&
-				Validator.isNotNull(calendarBooking)) {
-
-				int status = AttendeeUtil.getStatus(attendee,
-					calendarBooking.getStatus());
-
-				_calendarBookingLocalService.updateStatus(
-					calendarUser.getUserId(), calendarBooking, status,
-					new ServiceContext());
-			}
+			icsContentListener.afterContentImported(data, calendarBooking);
 
 			return HttpServletResponse.SC_CREATED;
 		}
@@ -671,6 +658,16 @@ public class LiferayCalDAVStorageImpl extends BaseWebDAVStorageImpl {
 			webDAVRequest.getHttpServletRequest());
 
 		return new UserResourceImpl(user, parentPath, locale);
+	}
+
+
+	private <T> ServiceContext _getServiceContext(
+		WebDAVRequest webDAVRequest, Class<T> clazz)
+		throws PortalException {
+
+		return ServiceContextFactory.getInstance(
+			clazz.getName(),
+			webDAVRequest.getHttpServletRequest());
 	}
 
 	@Reference(policyOption = ReferencePolicyOption.GREEDY)

@@ -23,11 +23,19 @@ import com.liferay.portal.kernel.sanitizer.SanitizerException;
  */
 public interface ICSImportExportListener {
 
-	public void afterContentExported(
+	public CalendarBooking afterContentExported(
 			String ics, CalendarBooking calendarBooking)
 		throws SanitizerException;
 
+	/**
+	 * @deprecated As of Mueller (7.2.x), replaced by {@link #afterContentImported(String,
+		CalendarBooking)}
+	 */
+	@Deprecated
 	public void afterContentImported(String ics, Calendar calendar)
+		throws SanitizerException;
+
+	public CalendarBooking afterContentImported(String ics, CalendarBooking calendar)
 		throws SanitizerException;
 
 	public String beforeContentExported(
@@ -36,5 +44,4 @@ public interface ICSImportExportListener {
 
 	public String beforeContentImported(String ics, Calendar calendar)
 		throws SanitizerException;
-
 }
