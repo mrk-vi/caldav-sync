@@ -208,8 +208,7 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 
 					updateICSExternalAttendees(vEvent, calendarBooking);
 
-//					updateDowloadedInvitations(
-//						currentUser, iCalCalendar, vEvent, calendarBooking);
+					setOrganizer(vEvent, calendarBooking);
 
 					updateAllDayDate(vEvent, calendarBooking, currentUser);
 
@@ -352,6 +351,77 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 		ModelResourcePermission<Calendar> modelResourcePermission) {
 
 		_calendarModelResourcePermission = modelResourcePermission;
+	}
+
+	protected void setOrganizer(
+		VEvent vEvent, CalendarBooking calendarBooking) throws PortalException {
+
+		CalendarBooking organizerBooking =
+			calendarBooking.getParentCalendarBooking();
+
+		Calendar calendar = organizerBooking.getCalendar();
+
+		Organizer organizer;
+
+		if (_calendarHelper.isCalendarUserCalendar(calendar)) {
+
+			User userOrganizer = _userLocalService.getUser(calendar.getUserId());
+
+			URI uri = URI.create(
+				"mailto:".concat(userOrganizer.getEmailAddress()));
+
+			organizer = new Organizer(uri);
+
+			organizer.getParameters(
+			).add(
+				new Cn(userOrganizer.getFullName())
+			);
+
+			vEvent.getProperties(
+			).add(
+				organizer
+			);
+
+			Attendee organizerAttendee = AttendeeUtil.create(
+				userOrganizer.getEmailAddress(), userOrganizer.getFullName(),
+				false, WorkflowConstants.STATUS_APPROVED);
+
+			vEvent.getProperties(
+			).add(
+				organizerAttendee
+			);
+
+		}
+		else if (_calendarHelper.isCalendarScheduleContactCalendar(calendar)) {
+			ScheduleContact scheduleContact =
+				_calendarHelper.getCalendarResourceScheduleContact(
+					calendar.getCalendarResource()).get();
+
+			URI uri = URI.create(
+					"mailto:".concat(scheduleContact.getEmailAddress()));
+
+			organizer = new Organizer(uri);
+
+			organizer.getParameters(
+			).add(
+				new Cn(scheduleContact.getCommonName())
+			);
+
+			vEvent.getProperties(
+			).add(
+				organizer
+			);
+
+			Attendee organizerAttendee = AttendeeUtil.create(
+				scheduleContact.getEmailAddress(),
+				scheduleContact.getCommonName(),
+				false, WorkflowConstants.STATUS_APPROVED);
+
+			vEvent.getProperties(
+			).add(
+				organizerAttendee
+			);
+		}
 	}
 
 	protected void updateAlarmActions(VEvent vEvent, long userId)
@@ -657,292 +727,6 @@ public class DefaultICSContentListener implements ICSImportExportListener {
 
 		return _calendarBookingLocalService.getCalendarBooking(
 			calendarBooking.getCalendarBookingId());
-	}
-
-	protected void updateDowloadedInvitations(
-			User user, net.fortuna.ical4j.model.Calendar iCalCalendar,
-			VEvent vEvent, CalendarBooking calendarBooking)
-		throws PortalException {
-
-		CalendarBooking parentBooking =
-			calendarBooking.getParentCalendarBooking();
-
-		// set organizer
-
-		User userOrganizer = getCalendarBookingUser(parentBooking);
-
-		if (userOrganizer != null) {
-			URI uri = URI.create(
-				"mailto:".concat(userOrganizer.getEmailAddress()));
-
-			Organizer organizer = new Organizer(uri);
-
-			organizer.getParameters(
-			).add(
-				new Cn(userOrganizer.getFullName())
-			);
-
-			vEvent.getProperties(
-			).add(
-				organizer
-			);
-
-			Attendee organizerAttendee = AttendeeUtil.create(
-				userOrganizer.getEmailAddress(), userOrganizer.getFullName(),
-				false, WorkflowConstants.STATUS_APPROVED);
-
-			vEvent.getProperties(
-			).add(
-				organizerAttendee
-			);
-		}
-
-		vEvent.getProperties(
-		).add(
-			Transp.OPAQUE
-		);
-
-		boolean hasUpdatePermissions =
-			_calendarModelResourcePermission.contains(
-				PermissionThreadLocal.getPermissionChecker(),
-				calendarBooking.getCalendarId(),
-				CalendarActionKeys.MANAGE_BOOKINGS);
-
-		User bookingUser = getCalendarBookingUser(calendarBooking);
-
-		// set event status
-
-		boolean bookingPending = false;
-
-		if (calendarBooking.getStatus() == WorkflowConstants.STATUS_PENDING) {
-			bookingPending = true;
-		}
-
-		if (_log.isDebugEnabled()) {
-			if (bookingUser != null) {
-				_log.debug(
-					"Booking user for booking " +
-						calendarBooking.getCalendarBookingId() + " is " +
-							bookingUser.getScreenName());
-			}
-			else {
-				_log.debug(
-					"No booking user for booking " +
-						calendarBooking.getCalendarBookingId());
-			}
-
-			if (userOrganizer != null) {
-				_log.debug(
-					"User organizer is " + userOrganizer.getScreenName());
-			}
-		}
-
-		Property eventStatus = vEvent.getProperty(Status.STATUS);
-
-		if (eventStatus != null) {
-			vEvent.getProperties(
-			).remove(
-				eventStatus
-			);
-		}
-
-		if (bookingPending) {
-			vEvent.getProperties(
-			).add(
-				Status.VEVENT_TENTATIVE
-			);
-		}
-		else {
-			vEvent.getProperties(
-			).add(
-				Status.VEVENT_CONFIRMED
-			);
-		}
-
-		// update attendees status
-
-		List<CalendarBooking> childCalendarBookings =
-			calendarBooking.getParentCalendarBooking(
-			).getChildCalendarBookings();
-
-		List<Attendee> attendees = new ArrayList<>();
-		List<String> attendeesEmails = new ArrayList<>();
-		Iterator<Attendee> attendeesIterator = vEvent.getProperties(
-			Attendee.ATTENDEE
-		).iterator();
-
-		while (attendeesIterator.hasNext()) {
-			attendees.add(attendeesIterator.next());
-		}
-
-		for (CalendarBooking childCalendarBooking : childCalendarBookings) {
-			boolean attendeeFound = false;
-
-			Optional<User> childBookingUser =
-				CalendarHelperUtil.getCalendarResourceUser(
-					childCalendarBooking.getCalendarResource());
-
-			if (_log.isDebugEnabled()) {
-				if (childBookingUser.isPresent()) {
-					_log.debug(
-						"User for calendar booking " +
-							childCalendarBooking.getCalendarBookingId() +
-								" is " +
-									childBookingUser.get(
-									).getScreenName());
-				}
-				else {
-					_log.debug(
-						"No User found for calendar booking " +
-							childCalendarBooking.getCalendarBookingId());
-				}
-			}
-
-			if (!childBookingUser.isPresent()) {
-				continue;
-			}
-
-			for (Attendee attendee : attendees) {
-				String emailAddress = StringUtil.replace(
-					attendee.getValue(), "mailto:", StringPool.BLANK);
-
-				if (!Validator.isEmailAddress(emailAddress)) {
-					continue;
-				}
-
-				if (attendeesEmails.contains(emailAddress)) {
-					continue;
-				}
-
-				if (emailAddress.equals(
-						childBookingUser.get().getEmailAddress())) {
-
-					attendeeFound = true;
-					attendeesEmails.add(emailAddress);
-
-					Parameter partStatParameter = attendee.getParameter(
-						PartStat.PARTSTAT);
-
-					if (partStatParameter == null) {
-						continue;
-					}
-
-					attendee.getParameters(
-					).remove(
-						partStatParameter
-					);
-
-					switch (childCalendarBooking.getStatus()) {
-						case WorkflowConstants.STATUS_DENIED:
-							attendee.getParameters(
-							).add(
-								PartStat.DECLINED
-							);
-
-							break;
-						case WorkflowConstants.STATUS_APPROVED:
-							attendee.getParameters(
-							).add(
-								PartStat.ACCEPTED
-							);
-							attendee.getParameters(
-							).removeAll(
-								Rsvp.RSVP
-							);
-
-							break;
-						case CalendarBookingWorkflowConstants.STATUS_MAYBE:
-							attendee.getParameters(
-							).add(
-								PartStat.TENTATIVE
-							);
-
-							break;
-						default:
-							attendee.getParameters(
-							).add(
-								PartStat.NEEDS_ACTION
-							);
-
-							break;
-					}
-
-					break;
-				}
-			}
-
-			String emailAddress = childBookingUser.get(
-			).getEmailAddress();
-
-			if (_log.isDebugEnabled()) {
-				_log.debug(
-					"Child booking user email address is " + emailAddress);
-			}
-
-			if ((userOrganizer != null) &&
-				childBookingUser.get().equals(userOrganizer)) {
-
-				continue;
-			}
-
-			if (!attendeeFound && !attendeesEmails.contains(emailAddress) &&
-				!attendeesEmails.contains(
-					childBookingUser.get().getEmailAddress())) {
-
-				Attendee attendee = AttendeeUtil.create(
-					childBookingUser.get(
-					).getEmailAddress(),
-					childBookingUser.get(
-					).getFullName(),
-					true, childCalendarBooking.getStatus());
-
-				if (_log.isDebugEnabled()) {
-					_log.debug(
-						"Add attendee " + attendee.toString() + " to booking " +
-							calendarBooking.getCalendarBookingId());
-				}
-
-				vEvent.getProperties(
-				).add(
-					attendee
-				);
-				attendeesEmails.add(emailAddress);
-			}
-		}
-
-		// add current user as attendee
-
-		if (bookingPending && hasUpdatePermissions && (bookingUser != null) &&
-			bookingUser.equals(user) && !bookingUser.equals(userOrganizer) &&
-			!attendeesEmails.contains(user.getEmailAddress())) {
-
-			Property methodProperty = iCalCalendar.getProperty(Method.METHOD);
-
-			iCalCalendar.getProperties(
-			).remove(
-				methodProperty
-			);
-			iCalCalendar.getProperties(
-			).add(
-				Method.REQUEST
-			);
-
-			Attendee attendee = AttendeeUtil.create(
-				user.getEmailAddress(), user.getFullName(), true,
-				WorkflowConstants.STATUS_PENDING);
-
-			if (_log.isDebugEnabled()) {
-				_log.debug(
-					"Adding current user (" + user.getEmailAddress() +
-						") as attendee of booking" +
-							calendarBooking.getCalendarBookingId());
-			}
-
-			vEvent.getProperties(
-			).add(
-				attendee
-			);
-		}
 	}
 
 	protected void updateICSExternalAttendees(
